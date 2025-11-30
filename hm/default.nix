@@ -1,0 +1,5 @@
+{
+  imports = [
+    ./components/ghostty.nix
+  ];
+}

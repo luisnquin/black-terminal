@@ -42,6 +42,7 @@ in
           share = "ngrok http";
           top = "btop";
           unrar = "unar";
+          "~" = "cd /home/$USER/";
         };
       in
         {
@@ -55,7 +56,6 @@ in
           "...." = "cd ../../..";
           "..." = "cd ../..";
           ".." = "cd ..";
-          "~" = "cd /home/$USER/";
 
           lsd = "echo 'lsd? lol'";
         }

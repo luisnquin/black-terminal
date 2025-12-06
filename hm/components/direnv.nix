@@ -4,7 +4,7 @@
   lib,
   ...
 }: let
-  inherit (pkgs.stdenv) isDarwin isLinux;
+  inherit (pkgs.stdenv) isLinux;
   cfg = config.shared.direnv;
 in
   with lib; {
@@ -17,7 +17,7 @@ in
         enable = true;
         enableZshIntegration = true;
         enableBashIntegration = isLinux;
-        enableFishIntegration = isDarwin;
+        # enableFishIntegration = isDarwin; - readonly
         config = {
           global = {
             load_dotenv = true;

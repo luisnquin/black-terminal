@@ -1,6 +1,6 @@
 {
   imports = [
     ./components/zsh
-    ./components/aliases.nix
+    ../shared-components/aliases.nix
   ];
 }

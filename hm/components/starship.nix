@@ -4,44 +4,27 @@
   lib,
   ...
 }: let
-  inherit (pkgs.stdenv) isDarwin;
+  inherit (pkgs.stdenv) isDarwin isLinux;
   cfg = config.shared.starship;
 in
   with lib; {
     options.shared.starship = {
-      enable = mkEnableOption "Shared Starship";
+      enable = mkEnableOption "Shared starship";
     };
 
     config = mkIf cfg.enable {
       programs.starship = {
         enable = true;
+
+        enableInteractive = true;
+        enableBashIntegration = isLinux;
+        enableFishIntegration = isDarwin;
+        enableZshIntegration = true;
+
         settings = {
           add_newline = true;
           command_timeout = 400;
           scan_timeout = 30;
-
-          aws = {
-            format = "\\[[$symbol ($profile )(\($region\))]($style)\\] ";
-            style = "bold blue";
-            symbol = " ";
-
-            profile_aliases = {
-              CompanyGroupFrobozzOnCallAccess = "Frobozz";
-              luisnquin-invio = "luisnquin";
-            };
-          };
-
-          azure = {
-            style = "blue bold";
-            symbol = "󰠅 ";
-            format = "on [$symbol($subscription)]($style) ";
-            disabled = false;
-          };
-
-          character = {
-            success_symbol = "[](bold green)";
-            error_symbol = "[](bold red)";
-          };
 
           format = let
             modules =
@@ -86,6 +69,11 @@ in
           in
             lib.concatStrings modules;
 
+          character = {
+            success_symbol = "[](bold green)";
+            error_symbol = "[](bold red)";
+          };
+
           cmd_duration = {
             min_time = 200;
             show_milliseconds = false;
@@ -100,7 +88,6 @@ in
             style = "#8d3beb";
           };
 
-          # Is not working
           env_var = {
             disabled = false;
           };
@@ -122,19 +109,11 @@ in
             disabled = false;
           };
 
-          kubernetes = {
-            symbol = "󱃾";
-            format = "\\[[$symbol $context( \($namespace\))]($style)\\] ";
-            style = "cyan bold";
+          sudo = {
+            style = "bold red";
             disabled = false;
-          };
-
-          terraform = {
-            symbol = "󱁢";
-            format = "[$symbol $workspace]($style) ";
-            detect_extensions = ["tf" "tfplan" "tfstate"];
-            detect_folders = [".terraform"];
-            disabled = false;
+            format = "[$symbol]($style)";
+            symbol = "󰭩 ";
           };
 
           nix_shell = {
@@ -163,7 +142,15 @@ in
             style = "#a716e0 bold";
             python_binary = ["python3" "python"];
             detect_extensions = ["py"];
-            detect_files = [".python-version" "Pipfile" "__init__.py" "pyproject.toml" "requirements.txt" "setup.py" "poetry.lock"];
+            detect_files = [
+              ".python-version"
+              "Pipfile"
+              "__init__.py"
+              "pyproject.toml"
+              "requirements.txt"
+              "setup.py"
+              "poetry.lock"
+            ];
           };
 
           rust = {
@@ -187,16 +174,42 @@ in
             style = "bold yellow";
           };
 
-          sudo = {
-            style = "bold red";
+          kubernetes = {
+            symbol = "󱃾";
+            format = "\\[[$symbol $context( \($namespace\))]($style)\\] ";
+            style = "cyan bold";
             disabled = false;
-            format = "[$symbol]($style)";
-            symbol = "󰭩 ";
+          };
+
+          terraform = {
+            symbol = "󱁢";
+            format = "[$symbol $workspace]($style) ";
+            detect_extensions = ["tf" "tfplan" "tfstate"];
+            detect_folders = [".terraform"];
+            disabled = false;
+          };
+
+          aws = {
+            format = "\\[[$symbol ($profile )(\($region\))]($style)\\] ";
+            style = "bold blue";
+            symbol = " ";
+
+            profile_aliases = {
+              CompanyGroupFrobozzOnCallAccess = "Frobozz";
+              luisnquin-invio = "luisnquin";
+            };
+          };
+
+          azure = {
+            style = "blue bold";
+            symbol = "󰠅 ";
+            format = "on [$symbol($subscription)]($style) ";
+            disabled = false;
           };
 
           custom = {
             go_is_updated = {
-              description = "Displays 🎉 if the go version used in the current project is the same as the local available";
+              description = "Displays 🎉 if the go version matches the local toolchain";
               shell = ["bash" "--noprofile" "--norc"];
               symbol = "🎉";
               format = " $symbol";
@@ -220,14 +233,20 @@ in
                   fi
                 fi
               '';
-              when = ''git rev-parse --is-inside-work-tree > /dev/null && [ $(git rev-list --count origin/$(git rev-parse --abbrev-ref HEAD)..HEAD) -gt 0 ]'';
+              when = ''
+                git rev-parse --is-inside-work-tree > /dev/null &&
+                [ "$(git rev-list --count origin/$(git rev-parse --abbrev-ref HEAD)..HEAD)" -gt 0 ]
+              '';
             };
 
             git_remote = {
               description = "Display symbol for remote git server";
               shell = ["bash" "--noprofile" "--norc"];
               format = "hosted in [$output ]($style) ";
-              command = ''GIT_REMOTE_SYMBOL=$(command git ls-remote --get-url 2> /dev/null | awk '{if ($0 ~ /github/) print ""; else if ($0 ~ /gitlab/) print ""; else if ($0 ~ /bitbucket/) print ""; else if ($0 ~ /git/) print ""; else print ""}'); echo "$GIT_REMOTE_SYMBOL "'';
+              command = ''
+                GIT_REMOTE_SYMBOL=$(command git ls-remote --get-url 2> /dev/null | awk '{if ($0 ~ /github/) print ""; else if ($0 ~ /gitlab/) print ""; else if ($0 ~ /bitbucket/) print ""; else if ($0 ~ /git/) print ""; else print ""}')
+                echo "$GIT_REMOTE_SYMBOL "
+              '';
               when = "git rev-parse --is-inside-work-tree 2> /dev/null";
               style = "#ededed";
             };
@@ -253,7 +272,7 @@ in
             };
 
             current_client = {
-              description = "Diplays the current client in case there's the environment variable";
+              description = "Displays the current client from .env";
               shell = ["bash" "--noprofile" "--norc"];
               format = " [($output )]($style)";
               command = ''echo "[$(grep -oP 'CLIENT=\K.*' .env | tr '[:lower:]' '[:upper:]')]"'';

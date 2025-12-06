@@ -8,7 +8,8 @@
     ./components/bat.nix
     ./components/direnv.nix
     ./components/fzf.nix
-    ./components/git.nix
     ./components/ghostty.nix
+    ./components/git.nix
+    ./components/starship.nix
   ];
 }

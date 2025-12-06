@@ -4,12 +4,12 @@
   inputs.nixpkgs.url = "nixpkgs/nixos-unstable";
 
   outputs = {...}: {
-    homeModules = {
-      default = {
-        imports = [
-          ./hm/default.nix
-        ];
-      };
-    };
+    homeModules.default.imports = [
+      ./hm/default.nix
+    ];
+
+    nixosModules.default.imports = [
+      ./nixos/default.nix
+    ];
   };
 }

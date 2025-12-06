@@ -1,5 +1,6 @@
 {
   imports = [
+    ./components/alacritty
     ./components/btop
     ./components/lazygit
     ./components/macchina

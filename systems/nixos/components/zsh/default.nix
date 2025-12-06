@@ -29,10 +29,6 @@ in
           ];
         };
 
-        syntaxHighlighting = {
-          enable = true;
-        };
-
         enableBashCompletion = true;
         enableCompletion = true;
 

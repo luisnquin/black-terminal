@@ -23,6 +23,13 @@ in
           save = 10000 * 2;
         };
 
+        syntaxHighlighting = {
+          enable = true;
+          patterns = {
+            "rm -rf *" = "fg=white,bold,bg=red";
+          };
+        };
+
         # (relative to $HOME)
         dotDir = "${config.home.homeDirectory}/.zsh";
 

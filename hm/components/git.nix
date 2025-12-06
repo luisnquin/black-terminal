@@ -4,6 +4,7 @@
   lib,
   ...
 }: let
+  inherit (pkgs.stdenv) isLinux;
   cfg = config.shared.git;
 in
   with lib; {
@@ -28,7 +29,7 @@ in
         enable = true;
 
         signing = {
-          signByDefault = true;
+          signByDefault = isLinux;
           key = null;
           signer = lib.getExe pkgs.gnupg;
         };

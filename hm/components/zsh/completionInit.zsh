@@ -4,7 +4,7 @@ autoload -U compinit && compinit
 
 complete -C "$(which aws_completer)" aws
 
-if command -v senv; then
+if command -v senv >/dev/null; then
 	source <(senv completion zsh)
 fi
 

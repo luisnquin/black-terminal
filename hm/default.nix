@@ -12,5 +12,6 @@
     ./components/ghostty.nix
     ./components/git.nix
     ./components/starship.nix
+    ./components/zoxide.nix
   ];
 }

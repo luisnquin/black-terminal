@@ -4,7 +4,7 @@
   lib,
   ...
 }: let
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv) isLinux isDarwin;
   cfg = config.shared.aliases;
 in
   with lib; {
@@ -15,14 +15,10 @@ in
     config = mkIf cfg.enable {
       environment.shellAliases = let
         forLinux = {
-          down = "cd ~/Downloads/";
           pr = "cd ~/Projects/";
           tmp = "cd /tmp/";
 
-          rm = "rm --interactive";
           du = "du --human-readable";
-          cat = "bat -p";
-
           open = "xdg-open";
 
           rc = "rclone";
@@ -38,12 +34,20 @@ in
           share = "ngrok http";
           top = "btop";
           unrar = "unar";
-          "~" = "cd /home/$USER/";
         };
       in
         {
-          # Instant tp to some directories
+          # Instant tp
+          down = "cd ~/Downloads/";
           dot = "cd ~/.dotfiles/";
+          "~" = "cd /${
+            if isDarwin
+            then "Users"
+            else "home"
+          }/$USER/";
+
+          cat = "bat -p";
+          rm = "rm -i";
 
           "........" = "cd ../../../../../../..";
           "......." = "cd ../../../../../..";

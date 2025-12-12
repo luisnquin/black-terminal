@@ -8,6 +8,7 @@
     ./components/zsh
     ./components/bat.nix
     ./components/direnv.nix
+    ./components/eza.nix
     ./components/fzf.nix
     ./components/ghostty.nix
     ./components/git.nix

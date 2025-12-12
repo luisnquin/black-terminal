@@ -21,10 +21,6 @@ in
 
           rm = "rm --interactive";
           du = "du --human-readable";
-          ls = "exa --icons";
-          sls = "exa --icons -Ta -I=.git";
-          ll = "exa -l";
-          la = "exa -a";
           cat = "bat -p";
 
           open = "xdg-open";

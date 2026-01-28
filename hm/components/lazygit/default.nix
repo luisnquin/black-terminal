@@ -1,5 +1,6 @@
 {
   config,
+  pkgs,
   lib,
   ...
 }: let
@@ -11,7 +12,11 @@ in
     };
 
     config = mkIf cfg.enable {
-      programs.lazygit.enable = true;
+      programs.lazygit.enable = false;
+
+      home.packages = [
+        pkgs.lazygit
+      ];
 
       xdg.configFile."lazygit/config.yml".source = builtins.path {
         name = "lazygit-config.yml";

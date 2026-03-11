@@ -1,7 +1,7 @@
 confirmOnQuit: false
 disableStartupPopups: false
 git:
-  autoFetch: true
+  autoFetch: false
   autoRefresh: true
   branchLogCmd: git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --
   commit:

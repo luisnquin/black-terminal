@@ -19,16 +19,7 @@ in
       programs.zsh = {
         enable = true;
 
-        autosuggestions = {
-          enable = true;
-          async = true;
-
-          highlightStyle = "fg=#9eadab";
-          strategy = [
-            "history"
-          ];
-        };
-
+        enableAutosuggestions = true;
         enableBashCompletion = true;
         enableCompletion = true;
 
@@ -40,7 +31,7 @@ in
 
         interactiveShellInit = builtins.readFile (builtins.path {
           name = "system-zshrc-script";
-          path = ./.zshrc;
+          path = ./../../shared/zsh/.zshrc;
         });
       };
     };

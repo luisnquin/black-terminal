@@ -33,6 +33,7 @@ in
                 "$sudo"
                 "$directory"
                 "$hostname"
+                "$localip"
                 "\${custom.git_remote}"
                 "$git_branch"
                 "$git_state"
@@ -44,6 +45,7 @@ in
                 "$sudo"
                 "$directory"
                 "$hostname"
+                "$localip"
                 "\${custom.git_remote}"
                 "$git_branch"
                 "$git_state"
@@ -133,6 +135,12 @@ in
             detect_folders = ["node_modules"];
             style = "bold green";
             not_capable_style = "bold red";
+          };
+
+          localip = {
+            ssh_only = true;
+            format = "@[$localipv4](bold red) ";
+            disabled = false;
           };
 
           python = {

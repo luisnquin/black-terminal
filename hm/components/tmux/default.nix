@@ -16,6 +16,20 @@ in
         enable = true;
         package = pkgs.tmux;
         extraConfig = builtins.readFile ./tmux.conf;
+
+        plugins = with pkgs; [
+          tmuxPlugins.pain-control
+          tmuxPlugins.sensible
+          tmuxPlugins.logging
+          tmuxPlugins.copycat
+          {
+            plugin = tmuxPlugins.tokyo-night-tmux;
+            extraConfig = ''
+              set -g @tokyo-night-tmux_theme night
+              set -g @tokyo-night-tmux_transparent 0
+            '';
+          }
+        ];
       };
 
       home.packages = [

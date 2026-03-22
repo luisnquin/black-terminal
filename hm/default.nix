@@ -1,19 +1,20 @@
 {
   imports = [
     ./components/alacritty
-    ./components/btop
-    ./components/lazygit
-    ./components/macchina
-    ./components/tmux
-    ./components/zsh
     ./components/bat.nix
+    ./components/btop
     ./components/direnv.nix
     ./components/eza.nix
     ./components/fzf.nix
     ./components/ghostty.nix
     ./components/git.nix
+    ./components/lazygit
+    ./components/less.nix
+    ./components/macchina
     ./components/magic-wormhole.nix
     ./components/starship.nix
+    ./components/tmux
     ./components/zoxide.nix
+    ./components/zsh
   ];
 }

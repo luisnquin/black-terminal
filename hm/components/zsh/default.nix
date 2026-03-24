@@ -17,6 +17,14 @@ in
         enableCompletion = true;
         completionInit = builtins.readFile ./completionInit.zsh;
 
+        initExtra = ''
+          if [[ -v ANTIGRAVITY_AGENT ]]; then
+            export STARSHIP_CONFIG="$HOME/.config/starship/agent.toml"
+            unset HISTFILE
+            export NO_COLOR=1
+          fi
+        '';
+
         history = {
           expireDuplicatesFirst = true;
           ignoreSpace = true;

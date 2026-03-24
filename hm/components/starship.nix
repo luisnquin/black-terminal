@@ -298,5 +298,20 @@ in
           };
         };
       };
+      xdg.configFile."starship/agent.toml".text = ''
+                format = """
+        $directory
+        $character
+        """
+                add_newline = false
+
+                [directory]
+                style = ""
+                read_only = ""
+
+                [character]
+                success_symbol = "> "
+                error_symbol = "! "
+      '';
     };
   }

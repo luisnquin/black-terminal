@@ -17,7 +17,7 @@ in
         enableCompletion = true;
         completionInit = builtins.readFile ./completionInit.zsh;
 
-        initExtra = ''
+        initContent = ''
           if [[ -v ANTIGRAVITY_AGENT ]]; then
             export STARSHIP_CONFIG="$HOME/.config/starship/agent.toml"
             unset HISTFILE

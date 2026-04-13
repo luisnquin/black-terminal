@@ -6,6 +6,46 @@
 }: let
   cfg = config.shared.tmux;
   inherit (lib) mkEnableOption mkOption types mkIf;
+
+  lsyncdStatus = pkgs.writeShellApplication {
+    name = "tmux-lsyncd-status";
+    runtimeInputs = with pkgs; [
+      tmux
+      gnugrep
+      gnused
+    ];
+    text = ''
+      set -euo pipefail
+
+      status_file="$(tmux show-option -gqv @lsyncd_status_file)"
+      status_file="''${status_file:-/tmp/lsyncd.status}"
+
+      if ! pgrep -x lsyncd >/dev/null 2>&1; then
+        printf "lsyncd: down"
+        exit 0
+      fi
+
+      if [ ! -f "$status_file" ]; then
+        printf "lsyncd: ?"
+        exit 0
+      fi
+
+      content="$(cat "$status_file" 2>/dev/null || true)"
+
+      active="$(printf '%s\n' "$content" | sed -nE 's/.*active[:=][[:space:]]*([0-9]+).*/\1/p' | head -n1)"
+      queued="$(printf '%s\n' "$content" | sed -nE 's/.*queued[:=][[:space:]]*([0-9]+).*/\1/p' | head -n1)"
+
+      if printf '%s\n' "$content" | grep -qi 'error'; then
+        printf "lsyncd: error"
+      elif [ -n "''${active:-}" ] && [ "$active" -gt 0 ]; then
+        printf "lsyncd: sync %s" "$active"
+      elif [ -n "''${queued:-}" ] && [ "$queued" -gt 0 ]; then
+        printf "lsyncd: queued %s" "$queued"
+      else
+        printf "lsyncd: ok"
+      fi
+    '';
+  };
 in {
   options.shared.tmux = {
     enable = mkEnableOption "Shared tmux configuration";
@@ -34,18 +74,24 @@ in {
   config = mkIf cfg.enable {
     programs.tmux = {
       enable = true;
-      extraConfig = builtins.readFile ./tmux.conf;
+      extraConfig =
+        builtins.readFile ./tmux.conf
+        + "\n"
+        + cfg.theme.extraConfig;
 
       plugins = with pkgs.tmuxPlugins; [
         pain-control
         sensible
         logging
         copycat
-        cfg.theme
+        cfg.theme.plugin
       ];
     };
 
-    home.packages = [pkgs.gitmux];
+    home.packages = [
+      pkgs.gitmux
+      lsyncdStatus
+    ];
 
     xdg.configFile."gitmux.conf".source = ./gitmux.conf;
   };

@@ -89,8 +89,17 @@ in {
     };
 
     programs.zsh.initContent = ''
-      if [ "$TMUX" = "" ] && [ "$TERM_PROGRAM" != "vscode" ] && [ ! "$USER" = "root" ]; then
-          exec ${pkgs.tmux}/bin/tmux
+      case $- in
+        *i*) ;;
+        *) return ;;
+      esac
+
+      if [ -z "''${TMUX:-}" ] && [ "''${TERM_PROGRAM:-}" != "vscode" ] && [ "''${USER:-}" != "root" ]; then
+        ${
+        if pkgs.stdenv.isDarwin
+        then "${pkgs.tmux}/bin/tmux"
+        else "exec ${pkgs.tmux}/bin/tmux"
+      }
       fi
     '';
 

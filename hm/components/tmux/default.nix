@@ -88,6 +88,12 @@ in {
       ];
     };
 
+    programs.zsh.initContent = ''
+      if [ "$TMUX" = "" ] && [ "$TERM_PROGRAM" != "vscode" ] && [ ! "$USER" = "root" ]; then
+          exec ${pkgs.tmux}/bin/tmux
+      fi
+    '';
+
     home.packages = [
       pkgs.gitmux
       lsyncdStatus

@@ -2,7 +2,9 @@
 
 autoload -U compinit && compinit
 
-complete -C "$(which aws_completer)" aws
+if whence complete >/dev/null 2>&1 && command -v aws_completer >/dev/null 2>&1; then
+	complete -C "$(command -v aws_completer)" aws
+fi
 
 if command -v senv >/dev/null; then
 	source <(senv completion zsh)

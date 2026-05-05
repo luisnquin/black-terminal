@@ -1,0 +1,124 @@
+{pkgs, ...}: {
+  paneBreathStatus = pkgs.writeShellApplication {
+    name = "tmux-pane-breath-status";
+    runtimeInputs = with pkgs; [
+      coreutils
+      gawk
+      procps
+    ];
+    text = ''
+      set -euo pipefail
+
+      tty_path="''${1:-}"
+      label="''${2:-}"
+      selected="''${3:-0}"
+
+      if [ -z "$tty_path" ] || [ "$tty_path" = "not a tty" ]; then
+        printf '%s' "$label"
+        exit 0
+      fi
+
+      tty="''${tty_path#/dev/}"
+
+      elapsed="$(
+        ps -t "$tty" -o pid=,ppid=,stat=,etimes=,comm= 2>/dev/null |
+          awk '
+            BEGIN { max = 0 }
+            {
+              comm = $5
+              etime = $4
+
+              if (comm ~ /^(zsh|bash|fish|sh|nu)$/) next
+              if (comm ~ /^(tmux|ps|awk|cat|sed|grep)$/) next
+              if (comm ~ /^tmux-pane-breath-status$/) next
+
+              if (etime > max) max = etime
+            }
+            END { print max }
+          '
+      )"
+
+      if [ -z "$elapsed" ] || [ "$elapsed" -lt 1 ]; then
+        if [ "$selected" = "current" ]; then
+          printf '#[fg=#c0caf5,bold]%s#[default]' "$label"
+        else
+          printf '#[fg=#a9b1d6]%s#[default]' "$label"
+        fi
+        exit 0
+      fi
+
+      phase="$(( $(date +%s) % 2 ))"
+
+      if [ "$elapsed" -lt 60 ]; then
+        color_a="#e0af68"
+        color_b="#f6c177"
+      elif [ "$elapsed" -lt 300 ]; then
+        color_a="#ff9e64"
+        color_b="#e0af68"
+      else
+        color_a="#f7768e"
+        color_b="#ff5c8a"
+      fi
+
+      color="$color_a"
+      if [ "$phase" -eq 1 ]; then
+        color="$color_b"
+      fi
+
+      minutes="$(( elapsed / 60 ))"
+      seconds="$(( elapsed % 60 ))"
+
+      if [ "$minutes" -gt 0 ]; then
+        runtime="''${minutes}m"
+      else
+        runtime="''${seconds}s"
+      fi
+
+      printf '#[fg=%s,bold]%s %s#[default]' "$color" "$label" "$runtime"
+    '';
+  };
+
+  lsyncdStatus = pkgs.writeShellApplication {
+    name = "tmux-lsyncd-status";
+    runtimeInputs = with pkgs; [
+      tmux
+      gnugrep
+      gnused
+    ];
+    text = ''
+      set -euo pipefail
+
+      if [ "''${TMUX_HIDE_LSYNCD:-0}" = 1 ]; then
+        exit 0
+      fi
+
+      status_file="$(tmux show-option -gqv @lsyncd_status_file)"
+      status_file="''${status_file:-/tmp/lsyncd.status}"
+
+      if ! pgrep -x lsyncd >/dev/null 2>&1; then
+        printf "lsyncd: down"
+        exit 0
+      fi
+
+      if [ ! -f "$status_file" ]; then
+        printf "lsyncd: ?"
+        exit 0
+      fi
+
+      content="$(cat "$status_file" 2>/dev/null || true)"
+
+      active="$(printf '%s\n' "$content" | sed -nE 's/.*active[:=][[:space:]]*([0-9]+).*/\1/p' | head -n1)"
+      queued="$(printf '%s\n' "$content" | sed -nE 's/.*queued[:=][[:space:]]*([0-9]+).*/\1/p' | head -n1)"
+
+      if printf '%s\n' "$content" | grep -qi 'error'; then
+        printf "lsyncd: error"
+      elif [ -n "''${active:-}" ] && [ "$active" -gt 0 ]; then
+        printf "lsyncd: sync %s" "$active"
+      elif [ -n "''${queued:-}" ] && [ "$queued" -gt 0 ]; then
+        printf "lsyncd: queued %s" "$queued"
+      else
+        printf "lsyncd: ok"
+      fi
+    '';
+  };
+}

@@ -17,6 +17,10 @@
     text = ''
       set -euo pipefail
 
+      if [ "''${TMUX_HIDE_LSYNCD:-0}" = 1 ]; then
+        exit 0
+      fi
+
       status_file="$(tmux show-option -gqv @lsyncd_status_file)"
       status_file="''${status_file:-/tmp/lsyncd.status}"
 
@@ -89,6 +93,10 @@ in {
     };
 
     programs.zsh.initContent = ''
+      if [ -n "''${SSH_CONNECTION:-}" ] || [ -n "''${SSH_CLIENT:-}" ] || [ -n "''${SSH_TTY:-}" ]; then
+        export TMUX_HIDE_LSYNCD=1
+      fi
+
       if [ "$TMUX" = "" ] && [ "$TERM_PROGRAM" != "vscode" ] && [ ! "$USER" = "root" ]; then
           exec ${pkgs.tmux}/bin/tmux
       fi

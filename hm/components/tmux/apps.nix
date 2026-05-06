@@ -1,4 +1,8 @@
-{pkgs, ...}: {
+{
+  pkgs,
+  lsyncdHideBlock ? "",
+  ...
+}: {
   paneBreathStatus = pkgs.writeShellApplication {
     name = "tmux-pane-breath-status";
     runtimeInputs = with pkgs; [
@@ -84,34 +88,34 @@
       tmux
       gnugrep
     ];
-    text = ''
-      set -euo pipefail
+    text =
+      ''
+        set -euo pipefail
 
-      if [ "''${TMUX_HIDE_LSYNCD:-0}" = 1 ]; then
-        exit 0
-      fi
+      ''
+      + lsyncdHideBlock
+      + ''
+        status_file="$(tmux show-option -gqv @lsyncd_status_file)"
+        status_file="''${status_file:-/tmp/lsyncd.status}"
 
-      status_file="$(tmux show-option -gqv @lsyncd_status_file)"
-      status_file="''${status_file:-/tmp/lsyncd.status}"
+        if ! pgrep -x lsyncd >/dev/null 2>&1; then
+          printf 'LSYNCD=0'
+          exit 0
+        fi
 
-      if ! pgrep -x lsyncd >/dev/null 2>&1; then
-        printf 'LSYNCD=0'
-        exit 0
-      fi
+        if [ ! -f "$status_file" ]; then
+          printf 'LSYNCD=0'
+          exit 0
+        fi
 
-      if [ ! -f "$status_file" ]; then
-        printf 'LSYNCD=0'
-        exit 0
-      fi
+        content="$(cat "$status_file" 2>/dev/null || true)"
 
-      content="$(cat "$status_file" 2>/dev/null || true)"
-
-      if printf '%s\n' "$content" | grep -qi 'error'; then
-        printf 'LSYNCD=E'
-      else
-        printf 'LSYNCD=1'
-      fi
-    '';
+        if printf '%s\n' "$content" | grep -qi 'error'; then
+          printf 'LSYNCD=E'
+        else
+          printf 'LSYNCD=1'
+        fi
+      '';
   };
 
   gpgAgentStatus = pkgs.writeShellApplication {
@@ -122,10 +126,6 @@
     ];
     text = ''
       set -euo pipefail
-
-      if [ "''${TMUX_HIDE_GPG_AGENT:-0}" = 1 ]; then
-        exit 0
-      fi
 
       keyinfo_out="$(
         gpg-connect-agent 'keyinfo --list' /bye 2>/dev/null || true
@@ -147,10 +147,6 @@
     ];
     text = ''
       set -euo pipefail
-
-      if [ "''${TMUX_HIDE_SSH_AGENT:-0}" = 1 ]; then
-        exit 0
-      fi
 
       sock="''${SSH_AUTH_SOCK:-}"
       if [ -z "$sock" ] || [ ! -S "$sock" ]; then

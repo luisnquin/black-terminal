@@ -64,6 +64,8 @@ in {
       pkgs.gitmux
       apps.lsyncdStatus
       apps.paneBreathStatus
+      apps.gpgAgentStatus
+      apps.sshAgentStatus
     ];
 
     xdg.configFile."gitmux.conf".source = ./gitmux.conf;

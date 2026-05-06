@@ -121,4 +121,56 @@
       fi
     '';
   };
+
+  gpgAgentStatus = pkgs.writeShellApplication {
+    name = "tmux-gpg-agent-status";
+    runtimeInputs = with pkgs; [
+      gnupg
+      gawk
+    ];
+    text = ''
+      set -euo pipefail
+
+      if [ "''${TMUX_HIDE_GPG_AGENT:-0}" = 1 ]; then
+        exit 0
+      fi
+
+      keyinfo_out="$(
+        gpg-connect-agent 'keyinfo --list' /bye 2>/dev/null || true
+      )"
+
+      if printf '%s\n' "$keyinfo_out" |
+        awk '/^S KEYINFO / && $7 == "1" { found = 1 } END { exit(found ? 0 : 1) }'; then
+        printf 'GPG=1'
+      else
+        printf 'GPG=0'
+      fi
+    '';
+  };
+
+  sshAgentStatus = pkgs.writeShellApplication {
+    name = "tmux-ssh-agent-status";
+    runtimeInputs = with pkgs; [
+      openssh
+    ];
+    text = ''
+      set -euo pipefail
+
+      if [ "''${TMUX_HIDE_SSH_AGENT:-0}" = 1 ]; then
+        exit 0
+      fi
+
+      sock="''${SSH_AUTH_SOCK:-}"
+      if [ -z "$sock" ] || [ ! -S "$sock" ]; then
+        printf 'SSH=0'
+        exit 0
+      fi
+
+      if ssh-add -l >/dev/null 2>&1; then
+        printf 'SSH=1'
+      else
+        printf 'SSH=0'
+      fi
+    '';
+  };
 }

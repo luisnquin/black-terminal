@@ -69,13 +69,21 @@
         color="$color_b"
       fi
 
-      minutes="$(( elapsed / 60 ))"
-      seconds="$(( elapsed % 60 ))"
+      seconds_part="$(( elapsed % 60 ))"
+      total_minutes="$(( elapsed / 60 ))"
+      hours="$(( elapsed / 3600 ))"
+      minutes_in_hour="$(( total_minutes % 60 ))"
 
-      if [ "$minutes" -gt 0 ]; then
-        runtime="''${minutes}m"
+      if [ "$elapsed" -lt 60 ]; then
+        runtime="''${seconds_part}s"
+      elif [ "$hours" -gt 0 ]; then
+        if [ "$minutes_in_hour" -eq 0 ]; then
+          runtime="''${hours}h"
+        else
+          runtime="''${hours}h''${minutes_in_hour}m"
+        fi
       else
-        runtime="''${seconds}s"
+        runtime="''${total_minutes}m"
       fi
 
       printf '#[fg=%s,bold]%s %s#[default]' "$color" "$label" "$runtime"

@@ -83,7 +83,6 @@
     runtimeInputs = with pkgs; [
       tmux
       gnugrep
-      gnused
     ];
     text = ''
       set -euo pipefail
@@ -96,28 +95,21 @@
       status_file="''${status_file:-/tmp/lsyncd.status}"
 
       if ! pgrep -x lsyncd >/dev/null 2>&1; then
-        printf "lsyncd: down"
+        printf 'LSYNCD=0'
         exit 0
       fi
 
       if [ ! -f "$status_file" ]; then
-        printf "lsyncd: ?"
+        printf 'LSYNCD=0'
         exit 0
       fi
 
       content="$(cat "$status_file" 2>/dev/null || true)"
 
-      active="$(printf '%s\n' "$content" | sed -nE 's/.*active[:=][[:space:]]*([0-9]+).*/\1/p' | head -n1)"
-      queued="$(printf '%s\n' "$content" | sed -nE 's/.*queued[:=][[:space:]]*([0-9]+).*/\1/p' | head -n1)"
-
       if printf '%s\n' "$content" | grep -qi 'error'; then
-        printf "lsyncd: error"
-      elif [ -n "''${active:-}" ] && [ "$active" -gt 0 ]; then
-        printf "lsyncd: sync %s" "$active"
-      elif [ -n "''${queued:-}" ] && [ "$queued" -gt 0 ]; then
-        printf "lsyncd: queued %s" "$queued"
+        printf 'LSYNCD=E'
       else
-        printf "lsyncd: ok"
+        printf 'LSYNCD=1'
       fi
     '';
   };

@@ -20,48 +20,46 @@
   };
 
   statusRight = concatStringsSep " " (filter (s: s != "") [
-      (optionalString cfg.status.gpg "#(tmux-gpg-agent-status)")
-      (optionalString cfg.status.ssh "#(tmux-ssh-agent-status)")
-      (optionalString cfg.status.lsyncd.enable "#(tmux-lsyncd-status)")
-      (optionalString cfg.status.gitmux ''#(gitmux -cfg $HOME/.config/gitmux.conf "#{pane_current_path}")'')
-    ]
-  );
+    (optionalString cfg.status.gpg.enable "#(tmux-gpg-agent-status)")
+    (optionalString cfg.status.ssh.enable "#(tmux-ssh-agent-status)")
+    (optionalString cfg.status.lsyncd.enable "#(tmux-lsyncd-status)")
+    (optionalString cfg.status.gitmux.enable ''#(gitmux -cfg $HOME/.config/gitmux.conf "#{pane_current_path}")'')
+  ]);
 in {
   options.shared.tmux = {
     enable = mkEnableOption "Shared tmux configuration";
 
     status = mkOption {
-      description = "Which segments appear in tmux status-right (order: gpg, ssh, lsyncd, gitmux).";
+      description = "Which segments appear in tmux status-right.";
       type = types.submodule {
         options = {
-          gpg = mkOption {
+          gpg.enable = mkOption {
             type = types.bool;
             default = true;
-            description = "Show GPG agent segment (GPG=0/1).";
+            description = "Show GPG agent segment.";
           };
-          ssh = mkOption {
+
+          ssh.enable = mkOption {
             type = types.bool;
             default = true;
-            description = "Show SSH agent segment (SSH=0/1).";
+            description = "Show SSH agent segment.";
           };
-          lsyncd = mkOption {
-            type = types.submodule {
-              options = {
-                enable = mkOption {
-                  type = types.bool;
-                  default = true;
-                  description = "Show lsyncd segment (LSYNCD=0/1/E).";
-                };
-                hideOnRemoteSsh = mkOption {
-                  type = types.bool;
-                  default = true;
-                  description = "When the login shell sees SSH vars before exec tmux, export TMUX_HIDE_LSYNCD so the segment stays blank.";
-                };
-              };
+
+          lsyncd = {
+            enable = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Show lsyncd segment.";
             };
-            default = {};
+
+            hideOnRemoteSsh = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Hide lsyncd segment when tmux starts from a remote SSH session.";
+            };
           };
-          gitmux = mkOption {
+
+          gitmux.enable = mkOption {
             type = types.bool;
             default = true;
             description = "Show gitmux segment.";
@@ -119,7 +117,7 @@ in {
       ''
       + ''
         if [ "$TMUX" = "" ] && [ "$TERM_PROGRAM" != "vscode" ] && [ ! "$USER" = "root" ]; then
-            exec ${pkgs.tmux}/bin/tmux
+          exec ${pkgs.tmux}/bin/tmux
         fi
       '';
 

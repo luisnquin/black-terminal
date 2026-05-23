@@ -10,14 +10,8 @@
   gitOptions = import ../../shared/git/options.nix {inherit lib;};
   sharedGitShellAliases = import ../../shared/git/shell-aliases.nix;
 
-  removeCursorCoauthorHook = pkgs.writeShellScript "git-commit-msg-remove-cursor-coauthor" ''
-    set -euo pipefail
-    msg_file="$1"
-
-    ${lib.getExe pkgs.gnused} -i '/^Co-authored-by: Cursor <cursoragent@cursor\.com>$/d' "$msg_file"
-
-    ${lib.getExe pkgs.perl} -0pi -e 's/\n{3,}\z/\n\n/' "$msg_file"
-  '';
+  commitMsgHook = pkgs.writeShellScript "git-commit-msg-hook"
+    (builtins.readFile ../../shared/git/commit-msg-hook.sh);
 in
   with lib; {
     options.shared.git = gitOptions;
@@ -49,7 +43,7 @@ in
           };
 
         hooks = {
-          commit-msg = removeCursorCoauthorHook;
+          commit-msg = commitMsgHook;
         };
       };
 

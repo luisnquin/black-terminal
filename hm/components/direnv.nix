@@ -38,7 +38,7 @@ in
       };
 
       home.sessionVariables = {
-        DIRENV_LOG_FORMAT = "direnv: %s";
+        DIRENV_LOG_FORMAT = ""; # "direnv: %s";
       };
     };
   }

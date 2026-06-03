@@ -5,6 +5,11 @@
   ...
 }: let
   cfg = config.shared.lazygit;
+
+  lazygitConfigDir =
+    if pkgs.stdenv.hostPlatform.isDarwin && !config.xdg.enable
+    then "Library/Application Support/lazygit"
+    else "${config.xdg.configHome}/lazygit";
 in
   with lib; {
     options.shared.lazygit = {
@@ -18,9 +23,12 @@ in
         pkgs.lazygit
       ];
 
-      xdg.configFile."lazygit/config.yml".source = builtins.path {
-        name = "lazygit-config.yml";
-        path = ./config.yml;
+      home.file."${lazygitConfigDir}/config.yml" = {
+        source = builtins.path {
+          name = "lazygit-config.yml";
+          path = ./config.yml;
+        };
+        force = true;
       };
     };
   }

@@ -90,17 +90,17 @@ keybinding:
     checkoutCommit: <space>
     cherryPickCopy: c
     cherryPickCopyRange: C
-    copyCommitMessageToClipboard: <c-y>
+    copyCommitMessageToClipboard: <ctrl+y>
     createFixupCommit: F
     markCommitAsFixup: f
-    moveDownCommit: <c-j>
-    moveUpCommit: <c-k>
-    openLogMenu: <c-l>
+    moveDownCommit: <ctrl+j>
+    moveUpCommit: <ctrl+k>
+    openLogMenu: <ctrl+l>
     pasteCommits: v
     pickCommit: p
     renameCommit: r
     renameCommitWithEditor: R
-    resetCherryPick: <c-R>
+    resetCherryPick: <ctrl+r>
     revertCommit: t
     squashAboveCommits: S
     squashDown: s
@@ -115,7 +115,7 @@ keybinding:
     fetch: f
     ignoreFile: i
     openMergeOptions: M
-    openStatusFilter: <c-b>
+    openStatusFilter: <ctrl+b>
     refreshFiles: r
     stashAllChanges: s
     toggleStagedAll: a
@@ -141,16 +141,16 @@ keybinding:
     appendNewline: <a-enter>
     confirm: <enter>
     confirm-alt1: y
-    copyToClipboard: <c-o>
-    createPatchOptionsMenu: <c-p>
+    copyToClipboard: <ctrl+o>
+    createPatchOptionsMenu: <ctrl+p>
     createRebaseOptionsMenu: m
     decreaseContextInDiffView: "{"
     diffingMenu: W
-    diffingMenu-alt: <c-e>
+    diffingMenu-alt: <ctrl+e>
     edit: e
     executeShellCommand: ":"
     extrasMenu: "@"
-    filteringMenu: <c-s>
+    filteringMenu: <ctrl+s>
     goInto: <enter>
     gotoBottom: ">"
     gotoTop: <
@@ -170,7 +170,7 @@ keybinding:
     nextScreenMode: +
     nextTab: "]"
     openFile: o
-    openRecentRepos: <c-r>
+    openRecentRepos: <ctrl+r>
     optionMenu: <disabled>
     optionMenu-alt1: "?"
     prevBlock: <left>
@@ -184,25 +184,25 @@ keybinding:
     pullFiles: p
     pushFiles: P
     quit: q
-    quit-alt1: <c-c>
+    quit-alt1: <ctrl+c>
     quitWithoutChangingDirectory: Q
-    redo: <c-z>
+    redo: <ctrl+z>
     refresh: R
     remove: d
     return: <esc>
     return-alt1: <disabled>
     scrollDownMain: <pgdown>
     scrollDownMain-alt1: J
-    scrollDownMain-alt2: <c-d>
+    scrollDownMain-alt2: <ctrl+d>
     scrollLeft: H
     scrollRight: L
     scrollUpMain: <pgup>
     scrollUpMain-alt1: K
-    scrollUpMain-alt2: <c-u>
+    scrollUpMain-alt2: <ctrl+u>
     select: <space>
     submitEditorText: <enter>
     togglePanel: <tab>
-    toggleWhitespaceInDiffView: <c-w>
+    toggleWhitespaceInDiffView: <ctrl+w>
     undo: z
 notARepository: quit
 os:

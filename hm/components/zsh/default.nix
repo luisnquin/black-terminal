@@ -86,11 +86,15 @@ in
           {
             name = "zinsults";
             file = "zinsults.plugin.zsh";
-            src = fetchFromGitHub {
-              owner = "ahmubashshir";
-              repo = "zinsults";
-              rev = "1ea07a3d1535d7343344176b73fec7f5c760225c";
-              sha256 = "1zi7ni5sri8a8favkk4vxwn6n5sawvvi5lhn9c48hkv0rf5y84nr";
+            src = applyPatches {
+              name = "zinsults-patched";
+              src = fetchFromGitHub {
+                owner = "ahmubashshir";
+                repo = "zinsults";
+                rev = "1ea07a3d1535d7343344176b73fec7f5c760225c";
+                sha256 = "1zi7ni5sri8a8favkk4vxwn6n5sawvvi5lhn9c48hkv0rf5y84nr";
+              };
+              patches = [./zinsults-zsh-5.9.1.patch];
             };
           }
           {

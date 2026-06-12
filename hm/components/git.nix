@@ -10,7 +10,8 @@
   gitOptions = import ../../shared/git/options.nix {inherit lib;};
   sharedGitShellAliases = import ../../shared/git/shell-aliases.nix;
 
-  commitMsgHook = pkgs.writeShellScript "git-commit-msg-hook"
+  commitMsgHook =
+    pkgs.writeShellScript "git-commit-msg-hook"
     (builtins.readFile ../../shared/git/commit-msg-hook.sh);
 in
   with lib; {

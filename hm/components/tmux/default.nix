@@ -108,18 +108,20 @@ in {
       ];
     };
 
-    programs.zsh.initContent =
-      optionalString (cfg.status.lsyncd.enable && cfg.status.lsyncd.hideOnRemoteSsh) ''
-        if [ -n "''${SSH_CONNECTION:-}" ] || [ -n "''${SSH_CLIENT:-}" ] || [ -n "''${SSH_TTY:-}" ]; then
-          export TMUX_HIDE_LSYNCD=1
+    programs.zsh.initContent = lib.mkMerge [
+      (lib.mkIf (cfg.status.lsyncd.enable && cfg.status.lsyncd.hideOnRemoteSsh) (
+        lib.mkOrder 490 ''
+          if [[ -n "''${SSH_CONNECTION:-}" || -n "''${SSH_CLIENT:-}" || -n "''${SSH_TTY:-}" ]]; then
+            export TMUX_HIDE_LSYNCD=1
+          fi
+        ''
+      ))
+      (lib.mkOrder 500 ''
+        if [[ -z "$TMUX" && "$TERM_PROGRAM" != "vscode" && "$USER" != "root" ]]; then
+          exec ${lib.getExe pkgs.tmux}
         fi
-
-      ''
-      + ''
-        if [ "$TMUX" = "" ] && [ "$TERM_PROGRAM" != "vscode" ] && [ ! "$USER" = "root" ]; then
-          exec ${pkgs.tmux}/bin/tmux
-        fi
-      '';
+      '')
+    ];
 
     home.packages = [
       pkgs.gitmux

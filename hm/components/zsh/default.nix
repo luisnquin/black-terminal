@@ -12,10 +12,22 @@ in
     };
 
     config = mkIf cfg.enable {
+      # Skip NixOS-generated /etc/zprofile and /etc/zshrc (duplicate compinit + config).
+      home.file.".zshenv".text = lib.mkForce ''
+        setopt no_global_rcs
+        source ${lib.escapeShellArg "${config.home.homeDirectory}/.zsh/.zshenv"}
+      '';
+
       programs.zsh = {
         enable = true;
         enableCompletion = true;
         completionInit = builtins.readFile ./completionInit.zsh;
+
+        autosuggestion = {
+          enable = true;
+          highlight = "fg=#9eadab";
+          strategy = ["history"];
+        };
 
         initContent = ''
           if [[ -v ANTIGRAVITY_AGENT ]]; then

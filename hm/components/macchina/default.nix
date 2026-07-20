@@ -9,6 +9,12 @@ in
   with lib; {
     options.shared.macchina = {
       enable = mkEnableOption "Shared macchina";
+
+      ascii = mkOption {
+        type = types.nullOr types.lines;
+        default = null;
+        description = "Custom ASCII art rendered by Macchina.";
+      };
     };
 
     config = mkIf cfg.enable {
@@ -49,9 +55,11 @@ in
           x = 2
           y = 0
 
-          [custom_ascii]
-          color = "#583ba3"
-          path = "${./v.ascii}"
+          ${optionalString (cfg.ascii != null) ''
+            [custom_ascii]
+            color = "#583ba3"
+            path = "${pkgs.writeText "macchina-ascii" cfg.ascii}"
+          ''}
 
           [randomize]
           key_color = false

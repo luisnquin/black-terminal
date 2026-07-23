@@ -29,6 +29,12 @@ in {
   options.shared.tmux = {
     enable = mkEnableOption "Shared tmux configuration";
 
+    autoStart = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Exec tmux from interactive zsh startup. Disable when the terminal emulator launches tmux itself.";
+    };
+
     status = mkOption {
       description = "Which segments appear in tmux status-right.";
       type = types.submodule {
@@ -116,11 +122,11 @@ in {
           fi
         ''
       ))
-      (lib.mkOrder 500 ''
+      (lib.mkIf cfg.autoStart (lib.mkOrder 500 ''
         if [[ -z "$TMUX" && "$TERM_PROGRAM" != "vscode" && "$USER" != "root" ]]; then
           exec ${lib.getExe pkgs.tmux}
         fi
-      '')
+      ''))
     ];
 
     home.packages = [

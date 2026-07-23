@@ -5,14 +5,18 @@ autoload -Uz compinit
 local zdot="${ZDOTDIR:-$HOME/.zsh}"
 local dump="$zdot/.zcompdump"
 
-# drop stale per-host/per-pid dumps; keep only the canonical file
-rm -f -- "$zdot"/.zcompdump.*(N) 2>/dev/null
+# drop stale per-host/per-pid dumps; keep only the canonical file.
+# mh+1 spares in-flight temp dumps of shells starting concurrently.
+rm -f -- "$zdot"/.zcompdump.*(N.mh+1) 2>/dev/null
 
 if [[ -n "$dump"(#qN.mh+24) ]]; then
   compinit -C -d "$dump"
 else
   compinit -d "$dump"
 fi
+
+# bash's complete builtin, for completers below (no_global_rcs skips /etc/zshrc's)
+autoload -Uz bashcompinit && bashcompinit
 
 if whence complete >/dev/null 2>&1 && command -v aws_completer >/dev/null 2>&1; then
 	complete -C "$(command -v aws_completer)" aws

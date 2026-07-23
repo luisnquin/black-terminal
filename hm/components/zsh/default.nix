@@ -18,6 +18,11 @@ in
         source ${lib.escapeShellArg "${config.home.homeDirectory}/.zsh/.zshenv"}
       '';
 
+      # no_global_rcs also skips environment.shellAliases, so mirror them here.
+      home.shellAliases = import ../../../shared/aliases/shell-aliases.nix {
+        inherit (pkgs.stdenv) isLinux isDarwin;
+      };
+
       programs.zsh = {
         enable = true;
         enableCompletion = true;

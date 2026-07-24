@@ -40,6 +40,8 @@ in
             unset HISTFILE
             export NO_COLOR=1
           fi
+
+          ${builtins.readFile ../../../shared/zsh/.zshrc}
         '';
 
         history = {

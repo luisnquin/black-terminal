@@ -5,7 +5,9 @@
   ...
 }: let
   cfg = config.shared.tmux;
-  inherit (lib) mkEnableOption mkOption types mkIf optionalString concatStringsSep filter;
+  inherit (lib) mkEnableOption mkOption types mkIf optionalString concatStringsSep concatMapStrings filter;
+
+  autoStartSkipGuard = concatMapStrings (v: " && -z \"\${${v}:-}\"") cfg.autoStartSkipEnv;
 
   lsyncdHideBlock = optionalString (cfg.status.lsyncd.enable && cfg.status.lsyncd.hideOnRemoteSsh) ''
     if [ "''${TMUX_HIDE_LSYNCD:-0}" = 1 ]; then
@@ -33,6 +35,13 @@ in {
       type = types.bool;
       default = true;
       description = "Exec tmux from interactive zsh startup. Disable when the terminal emulator launches tmux itself.";
+    };
+
+    autoStartSkipEnv = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      example = ["HERDR_ENV" "SSH_CONNECTION"];
+      description = "Env vars that suppress autostart when set, e.g. when another multiplexer or an SSH-side launcher owns the shell.";
     };
 
     status = mkOption {
@@ -123,7 +132,7 @@ in {
         ''
       ))
       (lib.mkIf cfg.autoStart (lib.mkOrder 500 ''
-        if [[ -z "$TMUX" && "$TERM_PROGRAM" != "vscode" && "$USER" != "root" ]]; then
+        if [[ -z "$TMUX"${autoStartSkipGuard} && "$TERM_PROGRAM" != "vscode" && "$USER" != "root" ]]; then
           exec ${lib.getExe pkgs.tmux}
         fi
       ''))

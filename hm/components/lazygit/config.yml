@@ -17,9 +17,10 @@ git:
     args: ""
     manualCommit: false
   overrideGpg: false
-  pagers:
+  diffRenderers:
     - colorArg: always
       useConfig: false
+      type: rawGit
   parseEmoji: false
   skipHookPrefix: WIP
   allBranchesLogCmds:

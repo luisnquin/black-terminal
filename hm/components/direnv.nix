@@ -4,7 +4,7 @@
   lib,
   ...
 }: let
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
   cfg = config.shared.direnv;
 in
   with lib; {

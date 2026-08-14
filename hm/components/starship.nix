@@ -4,7 +4,7 @@
   lib,
   ...
 }: let
-  inherit (pkgs.stdenv) isDarwin isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isDarwin isLinux;
   cfg = config.shared.starship;
 in
   with lib; {

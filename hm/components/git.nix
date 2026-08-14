@@ -4,7 +4,7 @@
   lib,
   ...
 }: let
-  inherit (pkgs.stdenv) isLinux;
+  inherit (pkgs.stdenv.hostPlatform) isLinux;
   cfg = config.shared.git;
   sharedGitConfig = import ../../shared/git/config.nix;
   gitOptions = import ../../shared/git/options.nix {inherit lib;};

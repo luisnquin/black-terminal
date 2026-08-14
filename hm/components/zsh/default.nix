@@ -20,7 +20,7 @@ in
 
       # no_global_rcs also skips environment.shellAliases, so mirror them here.
       home.shellAliases = import ../../../shared/aliases/shell-aliases.nix {
-        inherit (pkgs.stdenv) isLinux isDarwin;
+        inherit (pkgs.stdenv.hostPlatform) isLinux isDarwin;
       };
 
       programs.zsh = {

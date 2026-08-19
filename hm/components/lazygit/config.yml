@@ -42,6 +42,12 @@ gui:
   showIcons: true
   showListFooter: true
   showRandomTip: true
+  sidePanels:
+    - [submodules]
+    - [files, worktrees]
+    - [branches, remotes, tags]
+    - [commits, reflog]
+    - [stash]
   sidePanelWidth: 0.3333
   skipDiscardChangeWarning: false
   skipRewordInEditorWarning: false

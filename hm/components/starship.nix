@@ -145,7 +145,7 @@ in
 
           python = {
             symbol = "";
-            format = "via [\${symbol}\${pyenv_prefix}( \${version} )(\($virtualenv\) )]($style)";
+            format = "via [\${symbol}\${pyenv_prefix}( \${version} )(\\($virtualenv\\) )]($style)";
             version_format = "$major.$minor";
             style = "#a716e0 bold";
             python_binary = ["python3" "python"];
@@ -173,7 +173,7 @@ in
           ocaml = {
             symbol = "";
             version_format = "\${raw}";
-            format = "via [$symbol ($version )(\\(\($switch_name\)\\) )]($style)";
+            format = "via [$symbol ($version )(\\($switch_name\\) )]($style)";
             global_switch_indicator = "G";
             local_switch_indicator = "L";
             detect_extensions = ["opam" "ml" "mli" "re" "rei"];
@@ -184,7 +184,7 @@ in
 
           kubernetes = {
             symbol = "󱃾";
-            format = "\\[[$symbol $context( \($namespace\))]($style)\\] ";
+            format = "\\[[$symbol $context( \\($namespace\\))]($style)\\] ";
             style = "cyan bold";
             disabled = false;
           };
@@ -198,7 +198,7 @@ in
           };
 
           aws = {
-            format = "\\[[$symbol ($profile )(\($region\))]($style)\\] ";
+            format = "\\[[$symbol ($profile )(\\($region\\))]($style)\\] ";
             style = "bold blue";
             symbol = " ";
 

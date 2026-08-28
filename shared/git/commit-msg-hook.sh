@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# commit-msg hook: strip Cursor co-author trailer and normalize git revert subjects.
+# commit-msg hook: strip agent trailers and normalize git revert subjects.
 set -euo pipefail
 
 msg_file="$1"
 
 perl -i -0pe '
   s/^Co-authored-by: Cursor <cursoragent\@cursor\.com>\n?//gm;
+  s/^Claude-Session: \S+\n?//gm;
+  s/^Co-Authored-By: Claude\b[^\n]*<noreply\@anthropic\.com>\n?//gmi;
+  s/^🤖 Generated with \[Claude Code\][^\n]*\n?//gm;
 
   my @lines = split /\n/, $_, -1;
   if (@lines && $lines[0] =~ /^Revert "(.*)"\s*$/) {

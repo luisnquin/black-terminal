@@ -8,12 +8,12 @@ my $GIT = $ENV{COMMENT_BUDGET_GIT} || 'git';
 
 exit 0 if lc($ENV{COMMENT_BUDGET} || '') =~ /^(off|0|no|skip)$/;
 
-my $MAX_BLOCK_LINES = cfg('MAX_BLOCK_LINES', 3);
-my $MAX_BLOCKS      = cfg('MAX_BLOCKS',      3);
+my $MAX_BLOCK_LINES = cfg('MAX_BLOCK_LINES', 2);
+my $MAX_BLOCKS      = cfg('MAX_BLOCKS',      2);
 my $MIN_BLOCKS      = cfg('MIN_BLOCKS',      1);
-my $CODE_PER_BLOCK  = cfg('CODE_PER_BLOCK',  120);
-my $MAX_DENSITY     = cfg('MAX_DENSITY_PCT', 15);
-my $FREE_LINES      = cfg('FREE_LINES',      3);
+my $CODE_PER_BLOCK  = cfg('CODE_PER_BLOCK',  400);
+my $MAX_DENSITY     = cfg('MAX_DENSITY_PCT', 3);
+my $FREE_LINES      = cfg('FREE_LINES',      2);
 
 my $EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
@@ -44,6 +44,13 @@ my %CONTENT;
 sub file_content {
     my ($path) = @_;
     return $CONTENT{$path} if exists $CONTENT{$path};
+
+    if ($MODE eq 'worktree') {
+        open my $fh, '<', $path or return $CONTENT{$path} = undef;
+        local $/;
+        return $CONTENT{$path} = <$fh>;
+    }
+
     my $rev = $MODE eq 'post-commit' ? 'HEAD' : '';
     return $CONTENT{$path} = git('show', "$rev:$path");
 }
@@ -70,12 +77,13 @@ if ($MODE eq 'post-commit') {
     $diff = git('diff', $base, 'HEAD', '--unified=0', '--no-color', '--no-ext-diff', '-M') // '';
 
     $is_amend = 1 if (git('reflog', '-1', '--format=%gs') // '') =~ /^commit \(amend\)/;
+} elsif ($MODE eq 'worktree') {
+    $diff = git('diff', 'HEAD', '--unified=0', '--no-color', '--no-ext-diff',
+                '--diff-filter=ACMR', '-M') // '';
 } else {
     $diff = git('diff', '--cached', '--unified=0', '--no-color', '--no-ext-diff',
                 '--diff-filter=ACMR', '-M') // '';
 }
-
-exit 0 unless length $diff;
 
 my $C_LIKE  = {line => ['//'], block => [['/*', '*/']]};
 my $HASH    = {line => ['#']};
@@ -278,6 +286,21 @@ sub classify {
     return $before =~ /\S/ ? 'code+comment' : 'comment';
 }
 
+if ($MODE eq 'worktree') {
+    for my $path (split /\n/, git('ls-files', '-o', '--exclude-standard') // '') {
+        next unless length $path && lang_for($path);
+        my $content = file_content($path) // next;
+        my @lines = split /\n/, $content, -1;
+        pop @lines if @lines && $lines[-1] eq '';
+        next unless @lines;
+        $diff .= "+++ b/$path\n"
+               . sprintf("\@\@ -0,0 +1,%d \@\@\n", scalar @lines)
+               . join('', map { "+$_\n" } @lines);
+    }
+}
+
+exit 0 unless length $diff;
+
 my (@files, %added_of, $file, $lang, $lineno);
 
 for my $raw (split /\n/, $diff, -1) {
@@ -367,7 +390,9 @@ my $over_density = $comment_lines > $allowance;
 
 exit 0 unless @oversized || $over_budget || $over_density;
 
-my $verb = $MODE eq 'post-commit' ? 'commit undone' : 'commit refused';
+my $verb = $MODE eq 'post-commit' ? 'commit undone'
+         : $MODE eq 'worktree'    ? 'fix before continuing'
+         :                          'commit refused';
 my @out = ("", "comment budget exceeded - $verb", "");
 
 push @out, sprintf("  earned  %d added code line%s",
@@ -392,13 +417,18 @@ for my $b (@blocks) {
 }
 
 push @out, "",
-    "A comment earns its line only when the behavior is rare enough that reading",
-    "the code does not explain it. Everything else is reasoning, and reasoning",
-    "belongs in the commit body, where it cannot rot away from the code it claims",
-    "to describe.",
+    "Assume the right number of comments is zero. A comment earns its line only",
+    "when the behavior is rare enough that reading the code does not explain it.",
+    "Everything else is reasoning, and reasoning belongs in the commit body, where",
+    "it cannot rot away from the code it claims to describe.",
     "",
     "Delete what the code already says. What survives, spend the budget on.",
     "";
+
+if ($MODE eq 'worktree') {
+    print STDERR join("\n", @out);
+    exit 2;
+}
 
 if ($MODE eq 'post-commit') {
     my @parents = split ' ', (git('rev-list', '--parents', '-n', '1', 'HEAD') // '');

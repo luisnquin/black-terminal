@@ -39,6 +39,15 @@ sub git {
     return $? == 0 ? $out : undef;
 }
 
+my %CONTENT;
+
+sub file_content {
+    my ($path) = @_;
+    return $CONTENT{$path} if exists $CONTENT{$path};
+    my $rev = $MODE eq 'post-commit' ? 'HEAD' : '';
+    return $CONTENT{$path} = git('show', "$rev:$path");
+}
+
 my $git_dir = $ENV{GIT_DIR};
 unless (defined $git_dir && -d $git_dir) {
     chomp($git_dir = git('rev-parse', '--absolute-git-dir') // '');
@@ -73,9 +82,24 @@ my $HASH    = {line => ['#']};
 my $DASH    = {line => ['--']};
 my $SEMI    = {line => [';']};
 
+# Nix escapes inside '' strings with '' itself, so ''$, ''' and ''\ are not ends.
+# A bare ' is an identifier char there, never a quote.
+my $NIX = {
+    line      => ['#'],
+    quotes    => ['"'],
+    multiline => [{open => q{''}, close => q{''}, escape => qr/^''[\$'\\]/}],
+};
+
+my $PY = {
+    line      => ['#'],
+    multiline => [{open => '"""', close => '"""'}, {open => q{'''}, close => q{'''}}],
+};
+
 my %LANG = (
-    (map { $_ => $HASH } qw(nix sh bash zsh fish ksh py pyi rb pl pm t yaml yml toml
+    (map { $_ => $HASH } qw(sh bash zsh fish ksh rb pl pm t yaml yml toml
                             tf tfvars hcl cfg conf ini service desktop mk just env r jl)),
+    (map { $_ => $PY } qw(py pyi)),
+    nix => $NIX,
     (map { $_ => $C_LIKE } qw(go rs c h cc cpp cxx hpp hh m mm java kt kts swift scala
                               dart php cs zig proto gradle groovy jsonnet)),
     (map { $_ => $C_LIKE } qw(js jsx mjs cjs ts tsx mts cts)),
@@ -141,6 +165,18 @@ sub boundary_ok {
     return substr($text, $pos - 1, 1) =~ /[\s;)\]},=]/ ? 1 : 0;
 }
 
+sub string_end {
+    my ($text, $from, $spec) = @_;
+    my ($close, $escape) = ($spec->{close}, $spec->{escape});
+    my $at = $from;
+    while (($at = index($text, $close, $at)) >= 0) {
+        return $at + length $close
+            unless $escape && substr($text, $at) =~ $escape;
+        $at += length($close) + 1;
+    }
+    return -1;
+}
+
 sub classify {
     my ($text, $lang, $state) = @_;
 
@@ -153,21 +189,34 @@ sub classify {
         return $rest =~ /\S/ ? 'code+comment' : 'comment';
     }
 
+    my $n = length $text;
+    my ($i, $quote, $start) = (0, '', -1);
+    my $resumed = 0;
+
+    if (my $open = $state->{string}) {
+        my $at = string_end($text, 0, $open);
+        return 'code' if $at < 0;
+        $state->{string} = undef;
+        $i = $at;
+        $resumed = 1;
+    }
+
     my $openers = $lang->{openers} ||= [
         sort { length($b) <=> length($a) }
             (@{$lang->{line} || []}, map { $_->[0] } @{$lang->{block} || []})
     ];
     my $closer_of = $lang->{closer_of} ||=
         {map { $_->[0] => $_->[1] } @{$lang->{block} || []}};
+    my $strings = $lang->{multiline} || [];
+    my $quotes  = $lang->{quotes}    || ['"', "'", '`'];
 
-    my $seen = 0;
-    for my $tok (@$openers) {
-        $seen = 1, last if index($text, $tok) >= 0;
+    unless ($resumed) {
+        my $seen = 0;
+        for my $tok (@$openers, map { $_->{open} } @$strings) {
+            $seen = 1, last if index($text, $tok) >= 0;
+        }
+        return $text =~ /\S/ ? 'code' : 'blank' unless $seen;
     }
-    return $text =~ /\S/ ? 'code' : 'blank' unless $seen;
-
-    my $n = length $text;
-    my ($i, $quote, $start) = (0, '', -1);
 
     SCAN: while ($i < $n) {
         my $c = substr($text, $i, 1);
@@ -177,7 +226,22 @@ sub classify {
             $quote = '' if $c eq $quote;
             next;
         }
-        if ($c eq '"' || $c eq "'" || $c eq '`') {
+
+        for my $spec (@$strings) {
+            my $open = $spec->{open};
+            next unless substr($text, $i, length $open) eq $open;
+
+            my $end = string_end($text, $i + length $open, $spec);
+            if ($end < 0) {
+                $state->{string} = $spec;
+                $i = $n;
+                next SCAN;
+            }
+            $i = $end;
+            next SCAN;
+        }
+
+        if (grep { $c eq $_ } @$quotes) {
             $quote = $c;
             $i++;
             next;
@@ -206,7 +270,7 @@ sub classify {
         $i++;
     }
 
-    return $text =~ /\S/ ? 'code' : 'blank' if $start < 0;
+    return ($resumed || $text =~ /\S/) ? 'code' : 'blank' if $start < 0;
 
     my $payload = substr($text, $start);
     my $before  = substr($text, 0, $start);
@@ -214,28 +278,53 @@ sub classify {
     return $before =~ /\S/ ? 'code+comment' : 'comment';
 }
 
-my (@added, $file, $lang, $lineno, %state);
+my (@files, %added_of, $file, $lang, $lineno);
 
 for my $raw (split /\n/, $diff, -1) {
     if ($raw =~ m{^\+\+\+ (?:b/)?(.+)$}) {
         $file = $1 eq '/dev/null' ? undef : $1;
         $lang = defined $file ? lang_for($file) : undef;
-        %state = ();
+        $lineno = undef;
         next;
     }
     if ($raw =~ /^@@ -\S+ \+(\d+)/) {
         $lineno = $1;
-        %state = ();
         next;
     }
     next unless defined $lang && defined $lineno;
     next unless $raw =~ /^\+/;
-    next if $raw =~ m{^\+\+\+ };
 
-    my $text = substr($raw, 1);
-    my $kind = classify($text, $lang, \%state);
-    push @added, {file => $file, line => $lineno, kind => $kind};
+    push @files, $file unless $added_of{$file};
+    push @{$added_of{$file}}, {line => $lineno, text => substr($raw, 1)};
     $lineno++;
+}
+
+my @added;
+
+for my $path (@files) {
+    my $entries = $added_of{$path};
+    $lang = lang_for($path);
+    my %state;
+
+    my $content = file_content($path);
+    if (defined $content) {
+        my %wanted = map { $_->{line} => 1 } @$entries;
+        my (@kinds, $lineno);
+        for my $text (split /\n/, $content, -1) {
+            $lineno++;
+            my $kind = classify($text, $lang, \%state);
+            push @kinds, {file => $path, line => $lineno, kind => $kind}
+                if $wanted{$lineno};
+        }
+        if (@kinds == @$entries) {
+            push @added, @kinds;
+            next;
+        }
+        %state = ();
+    }
+
+    push @added, map { {file => $path, line => $_->{line},
+                        kind => classify($_->{text}, $lang, \%state)} } @$entries;
 }
 
 my ($code_lines, $comment_lines) = (0, 0);

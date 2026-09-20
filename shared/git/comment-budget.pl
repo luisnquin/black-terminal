@@ -40,19 +40,23 @@ sub git {
 }
 
 my %CONTENT;
+my ($NEW_REV, $OLD_REV) = ('', 'HEAD');
 
 sub file_content {
-    my ($path) = @_;
-    return $CONTENT{$path} if exists $CONTENT{$path};
+    my ($path, $side) = @_;
+    return undef unless defined $path;
 
-    if ($MODE eq 'worktree') {
-        open my $fh, '<', $path or return $CONTENT{$path} = undef;
+    my $key = "$side\0$path";
+    return $CONTENT{$key} if exists $CONTENT{$key};
+
+    if ($MODE eq 'worktree' && $side eq 'new') {
+        open my $fh, '<', $path or return $CONTENT{$key} = undef;
         local $/;
-        return $CONTENT{$path} = <$fh>;
+        return $CONTENT{$key} = <$fh>;
     }
 
-    my $rev = $MODE eq 'post-commit' ? 'HEAD' : '';
-    return $CONTENT{$path} = git('show', "$rev:$path");
+    my $rev = $side eq 'old' ? $OLD_REV : $NEW_REV;
+    return $CONTENT{$key} = git('show', "$rev:$path");
 }
 
 my $git_dir = $ENV{GIT_DIR};
@@ -74,6 +78,7 @@ if ($MODE eq 'post-commit') {
     exit 0 if @parents > 1;
 
     my $base = @parents ? $parents[0] : $EMPTY_TREE;
+    ($NEW_REV, $OLD_REV) = ('HEAD', $base);
     $diff = git('diff', $base, 'HEAD', '--unified=0', '--no-color', '--no-ext-diff', '-M') // '';
 
     $is_amend = 1 if (git('reflog', '-1', '--format=%gs') // '') =~ /^commit \(amend\)/;
@@ -289,11 +294,12 @@ sub classify {
 if ($MODE eq 'worktree') {
     for my $path (split /\n/, git('ls-files', '-o', '--exclude-standard') // '') {
         next unless length $path && lang_for($path);
-        my $content = file_content($path) // next;
+        my $content = file_content($path, 'new') // next;
         my @lines = split /\n/, $content, -1;
         pop @lines if @lines && $lines[-1] eq '';
         next unless @lines;
-        $diff .= "+++ b/$path\n"
+        $diff .= "--- /dev/null\n"
+               . "+++ b/$path\n"
                . sprintf("\@\@ -0,0 +1,%d \@\@\n", scalar @lines)
                . join('', map { "+$_\n" } @lines);
     }
@@ -301,53 +307,81 @@ if ($MODE eq 'worktree') {
 
 exit 0 unless length $diff;
 
-my (@files, %added_of, $file, $lang, $lineno);
+my (@files, %added_of, %removed_of, %old_of, %seen, $file, $lang, $lineno, $oldno, $hunk);
+my @lines = split /\n/, $diff, -1;
 
-for my $raw (split /\n/, $diff, -1) {
-    if ($raw =~ m{^\+\+\+ (?:b/)?(.+)$}) {
+# A removed `-- x` line is also `--- x` in the diff, so a header only counts
+# when the +++ half follows it.
+for (my $k = 0; $k <= $#lines; $k++) {
+    my $raw = $lines[$k];
+
+    if ($raw =~ m{^--- (?:a/)?(.+)$} && $k < $#lines && $lines[$k + 1] =~ m{^\+\+\+ (?:b/)?(.+)$}) {
+        my $old = $1;
+        $k++;
+        $lines[$k] =~ m{^\+\+\+ (?:b/)?(.+)$};
         $file = $1 eq '/dev/null' ? undef : $1;
         $lang = defined $file ? lang_for($file) : undef;
-        $lineno = undef;
+        $old_of{$file} = $old eq '/dev/null' ? undef : $old if defined $file;
+        ($lineno, $oldno) = (undef, undef);
         next;
     }
-    if ($raw =~ /^@@ -\S+ \+(\d+)/) {
-        $lineno = $1;
+    if ($raw =~ /^@@ -(\d+)(?:,\d+)? \+(\d+)/) {
+        ($oldno, $lineno) = ($1, $2);
+        $hunk++;
         next;
     }
     next unless defined $lang && defined $lineno;
-    next unless $raw =~ /^\+/;
 
-    push @files, $file unless $added_of{$file};
-    push @{$added_of{$file}}, {line => $lineno, text => substr($raw, 1)};
-    $lineno++;
+    if ($raw =~ /^\+/) {
+        push @files, $file unless $seen{$file}++;
+        push @{$added_of{$file}},
+            {file => $file, line => $lineno++, hunk => $hunk, text => substr($raw, 1)};
+    } elsif ($raw =~ /^-/) {
+        push @files, $file unless $seen{$file}++;
+        push @{$removed_of{$file}},
+            {file => $file, line => $oldno++, hunk => $hunk, text => substr($raw, 1)};
+    }
 }
 
-my @added;
-
-for my $path (@files) {
-    my $entries = $added_of{$path};
-    $lang = lang_for($path);
+sub classify_side {
+    my ($path, $lang, $side, $entries) = @_;
     my %state;
 
-    my $content = file_content($path);
+    my $content = file_content($path, $side);
     if (defined $content) {
         my %wanted = map { $_->{line} => 1 } @$entries;
-        my (@kinds, $lineno);
+        my (@kinds, $at);
         for my $text (split /\n/, $content, -1) {
-            $lineno++;
+            $at++;
             my $kind = classify($text, $lang, \%state);
-            push @kinds, {file => $path, line => $lineno, kind => $kind}
-                if $wanted{$lineno};
+            push @kinds, $kind if $wanted{$at};
         }
         if (@kinds == @$entries) {
-            push @added, @kinds;
-            next;
+            $entries->[$_]{kind} = $kinds[$_] for 0 .. $#kinds;
+            return;
         }
         %state = ();
     }
 
-    push @added, map { {file => $path, line => $_->{line},
-                        kind => classify($_->{text}, $lang, \%state)} } @$entries;
+    $_->{kind} = classify($_->{text}, $lang, \%state) for @$entries;
+}
+
+my (@added, %reworded);
+
+for my $path (@files) {
+    $lang = lang_for($path);
+
+    if (my $entries = $added_of{$path}) {
+        classify_side($path, $lang, 'new', $entries);
+        push @added, @$entries;
+    }
+    next unless my $gone = $removed_of{$path};
+
+    classify_side($old_of{$path} // $path, $lang, 'old', $gone);
+    for my $entry (@$gone) {
+        $reworded{$entry->{hunk}}++
+            if $entry->{kind} eq 'comment' || $entry->{kind} eq 'code+comment';
+    }
 }
 
 my ($code_lines, $comment_lines) = (0, 0);
@@ -356,8 +390,19 @@ my $run;
 
 for my $entry (@added) {
     my $kind = $entry->{kind};
-    $code_lines++    if $kind eq 'code' || $kind eq 'code+comment';
+    $code_lines++ if $kind eq 'code' || $kind eq 'code+comment';
+
+    if (($kind eq 'comment' || $kind eq 'code+comment') && $reworded{$entry->{hunk}}) {
+        $reworded{$entry->{hunk}}--;
+        $kind = $kind eq 'comment' ? 'rewrite' : 'code';
+    }
     $comment_lines++ if $kind eq 'comment' || $kind eq 'code+comment';
+
+    if ($kind eq 'rewrite') {
+        $run->{last} = $entry->{line}
+            if $run && $run->{file} eq $entry->{file} && $run->{last} + 1 == $entry->{line};
+        next;
+    }
 
     if ($kind eq 'comment') {
         if ($run && $run->{file} eq $entry->{file} && $run->{last} + 1 == $entry->{line}) {

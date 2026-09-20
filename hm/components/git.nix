@@ -13,6 +13,17 @@
   commitMsgHook =
     pkgs.writeShellScript "git-commit-msg-hook"
     (builtins.readFile ../../shared/git/commit-msg-hook.sh);
+
+  commentBudgetScript =
+    pkgs.writeText "git-comment-budget.pl"
+    (builtins.readFile ../../shared/git/comment-budget.pl);
+
+  mkCommentBudgetHook = mode:
+    pkgs.writeShellScript "git-comment-budget-${mode}" ''
+      export COMMENT_BUDGET_GIT=${config.programs.git.package}/bin/git
+
+      exec ${pkgs.perl}/bin/perl ${commentBudgetScript} ${mode}
+    '';
 in
   with lib; {
     options.shared.git = gitOptions;
@@ -45,6 +56,8 @@ in
 
         hooks = {
           commit-msg = commitMsgHook;
+          pre-commit = mkCommentBudgetHook "pre-commit";
+          post-commit = mkCommentBudgetHook "post-commit";
         };
       };
 

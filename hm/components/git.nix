@@ -24,6 +24,20 @@
 
       exec ${pkgs.perl}/bin/perl ${commentBudgetScript} ${mode}
     '';
+
+  deadnixHook = pkgs.writeShellScript "git-deadnix-hook" ''
+    export DEADNIX_HOOK_GIT=${config.programs.git.package}/bin/git
+    export DEADNIX_HOOK_DEADNIX=${lib.getExe pkgs.deadnix}
+
+    ${builtins.readFile ../../shared/git/deadnix-hook.sh}
+  '';
+
+  preCommitHook = pkgs.writeShellScript "git-pre-commit" ''
+    set -e
+
+    ${deadnixHook}
+    ${mkCommentBudgetHook "pre-commit"}
+  '';
 in
   with lib; {
     options.shared.git = gitOptions;
@@ -56,7 +70,7 @@ in
 
         hooks = {
           commit-msg = commitMsgHook;
-          pre-commit = mkCommentBudgetHook "pre-commit";
+          pre-commit = preCommitHook;
           post-commit = mkCommentBudgetHook "post-commit";
         };
       };

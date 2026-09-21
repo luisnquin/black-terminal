@@ -32,9 +32,16 @@
     ${builtins.readFile ../../shared/git/deadnix-hook.sh}
   '';
 
+  bannedLanguagesHook = pkgs.writeShellScript "git-banned-languages-hook" ''
+    export BANNED_LANGUAGES_GIT=${config.programs.git.package}/bin/git
+
+    ${builtins.readFile ../../shared/git/banned-languages-hook.sh}
+  '';
+
   preCommitHook = pkgs.writeShellScript "git-pre-commit" ''
     set -e
 
+    ${bannedLanguagesHook}
     ${deadnixHook}
     ${mkCommentBudgetHook "pre-commit"}
   '';

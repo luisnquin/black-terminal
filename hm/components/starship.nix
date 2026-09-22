@@ -260,10 +260,13 @@ in
             };
 
             dotfiles_workspace = {
-              description = "Displays the current NixOS version";
+              description = "Displays the current OS version";
               shell = ["bash" "--noprofile" "--norc"];
               format = "using [$symbol($output )]($style)";
-              command = ''NIXOS_VERSION=$(nixos-version | grep -o -E '^[0-9]+\.[0-9]+'); echo "$NIXOS_VERSION"'';
+              command =
+                if isDarwin
+                then "sw_vers -productVersion"
+                else ''nixos-version | grep -o -E '^[0-9]+\.[0-9]+' '';
               when = "pwd | grep -q '.dotfiles'";
               style = "#8fcff2";
               symbol = " ";

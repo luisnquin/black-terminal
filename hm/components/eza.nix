@@ -1,10 +1,8 @@
 {
   config,
-  pkgs,
   lib,
   ...
 }: let
-  inherit (pkgs.stdenv.hostPlatform) isDarwin isLinux;
   cfg = config.shared.eza;
 in
   with lib; {
@@ -13,11 +11,12 @@ in
     };
 
     config = mkIf cfg.enable {
+      # The per-shell integrations only emit their own aliases, which these replace.
       programs.eza = {
         enable = true;
-        enableZshIntegration = true;
-        enableBashIntegration = isLinux;
-        enableFishIntegration = isDarwin;
+        enableZshIntegration = false;
+        enableBashIntegration = false;
+        enableFishIntegration = false;
       };
 
       home.shellAliases = import ../../shared/eza/shell-aliases.nix;

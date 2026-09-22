@@ -10,6 +10,13 @@ in
   with lib; {
     options.shared.direnv = {
       enable = mkEnableOption "Shared direnv";
+
+      whitelistPrefixes = mkOption {
+        type = types.listOf types.str;
+        default = [];
+        example = ["$HOME/Projects" "$HOME/.dotfiles"];
+        description = "Directory prefixes direnv loads without asking for `direnv allow`.";
+      };
     };
 
     config = mkIf cfg.enable {
@@ -18,21 +25,16 @@ in
         enableZshIntegration = true;
         enableBashIntegration = isLinux;
         # enableFishIntegration = isDarwin; - readonly
-        config = {
-          global = {
-            load_dotenv = true;
-            warn_timeout = "5s";
+        config =
+          {
+            global = {
+              load_dotenv = true;
+              warn_timeout = "5s";
+            };
+          }
+          // optionalAttrs (cfg.whitelistPrefixes != []) {
+            whitelist.prefix = cfg.whitelistPrefixes;
           };
-
-          whitelist = {
-            prefix = [
-              "$HOME/Projects/github.com/luisnquin"
-              "$HOME/Projects/github.com/chanchitaapp"
-              "$HOME/Projects/github.com/0xc000022070"
-              "$HOME/.dotfiles"
-            ];
-          };
-        };
 
         nix-direnv.enable = true;
       };

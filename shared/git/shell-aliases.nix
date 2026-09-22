@@ -67,6 +67,4 @@ rec {
   # Lists last 5 tags
   gts = "${gt} --sort=v:refname | tac | head -n 5";
   gcl = "git clone";
-
-  lg = "lazygit";
 }

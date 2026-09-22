@@ -23,6 +23,10 @@ in
         pkgs.lazygit
       ];
 
+      home.shellAliases = {
+        lg = "lazygit";
+      };
+
       home.file."${lazygitConfigDir}/config.yml" = {
         source = builtins.path {
           name = "lazygit-config.yml";

@@ -10,7 +10,13 @@
   gitOptions = import ../../shared/git/options.nix {inherit lib;};
   sharedGitShellAliases = import ../../shared/git/shell-aliases.nix;
 
-  commitMsgHook =
+  chainRepoHook = pkgs.writeShellScript "git-chain-repo-hook" ''
+    export CHAIN_REPO_HOOK_GIT=${config.programs.git.package}/bin/git
+
+    ${builtins.readFile ../../shared/git/chain-repo-hook.sh}
+  '';
+
+  commitMsgScript =
     pkgs.writeShellScript "git-commit-msg-hook"
     (builtins.readFile ../../shared/git/commit-msg-hook.sh);
 
@@ -38,12 +44,28 @@
     ${builtins.readFile ../../shared/git/banned-languages-hook.sh}
   '';
 
+  commitMsgHook = pkgs.writeShellScript "git-commit-msg" ''
+    set -e
+
+    ${commitMsgScript} "$@"
+
+    exec ${chainRepoHook} commit-msg "$@"
+  '';
+
   preCommitHook = pkgs.writeShellScript "git-pre-commit" ''
     set -e
 
     ${bannedLanguagesHook}
     ${deadnixHook}
     ${mkCommentBudgetHook "pre-commit"}
+
+    exec ${chainRepoHook} pre-commit "$@"
+  '';
+
+  postCommitHook = pkgs.writeShellScript "git-post-commit" ''
+    ${mkCommentBudgetHook "post-commit"}
+
+    exec ${chainRepoHook} post-commit "$@"
   '';
 in
   with lib; {
@@ -78,7 +100,7 @@ in
         hooks = {
           commit-msg = commitMsgHook;
           pre-commit = preCommitHook;
-          post-commit = mkCommentBudgetHook "post-commit";
+          post-commit = postCommitHook;
         };
       };
 

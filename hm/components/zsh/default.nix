@@ -41,6 +41,12 @@ in
             export NO_COLOR=1
           fi
 
+          # Nobody typed in a pane dazzle opened, and the rc is what assigns
+          # HISTFILE, so only the rc can take it away again.
+          if [[ -v DAZZLE_PANE ]]; then
+            unset HISTFILE
+          fi
+
           ${builtins.readFile ../../../shared/zsh/.zshrc}
         '';
 

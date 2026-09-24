@@ -192,10 +192,12 @@ sub string_end {
 
 sub classify {
     my ($text, $lang, $state) = @_;
+    $state->{tail} = undef;
 
     if ($state->{closer}) {
         my $closer = $state->{closer};
         my $at = index($text, $closer);
+        $state->{tail} = $at < 0 ? $text : substr($text, 0, $at);
         return 'comment' if $at < 0;
         $state->{closer} = undef;
         my $rest = substr($text, $at + length $closer);
@@ -288,6 +290,7 @@ sub classify {
     my $payload = substr($text, $start);
     my $before  = substr($text, 0, $start);
     return 'exempt' if exempt($payload);
+    $state->{tail} = $payload;
     return $before =~ /\S/ ? 'code+comment' : 'comment';
 }
 
@@ -354,16 +357,19 @@ sub classify_side {
         for my $text (split /\n/, $content, -1) {
             $at++;
             my $kind = classify($text, $lang, \%state);
-            push @kinds, $kind if $wanted{$at};
+            push @kinds, [$kind, $state{tail}] if $wanted{$at};
         }
         if (@kinds == @$entries) {
-            $entries->[$_]{kind} = $kinds[$_] for 0 .. $#kinds;
+            @{$entries->[$_]}{qw(kind tail)} = @{$kinds[$_]} for 0 .. $#kinds;
             return;
         }
         %state = ();
     }
 
-    $_->{kind} = classify($_->{text}, $lang, \%state) for @$entries;
+    for my $entry (@$entries) {
+        $entry->{kind} = classify($entry->{text}, $lang, \%state);
+        $entry->{tail} = $state{tail};
+    }
 }
 
 my (@added, %reworded);
@@ -420,7 +426,9 @@ for my $entry (@added) {
         if $kind eq 'code+comment';
 }
 
-exit 0 unless @blocks;
+my @dashed = grep { defined $_->{tail} && $_->{tail} =~ /\xE2\x80\x94/ } @added;
+
+exit 0 unless @blocks || @dashed;
 
 my $budget = int($code_lines / $CODE_PER_BLOCK);
 $budget = $MIN_BLOCKS if $budget < $MIN_BLOCKS;
@@ -432,43 +440,56 @@ $allowance = $FREE_LINES if $allowance < $FREE_LINES;
 my @oversized = grep { $_->{size} > $MAX_BLOCK_LINES } @blocks;
 my $over_budget  = @blocks > $budget;
 my $over_density = $comment_lines > $allowance;
+my $overspent    = @oversized || $over_budget || $over_density;
 
-exit 0 unless @oversized || $over_budget || $over_density;
+exit 0 unless $overspent || @dashed;
 
 my $verb = $MODE eq 'post-commit' ? 'commit undone'
          : $MODE eq 'worktree'    ? 'fix before continuing'
          :                          'commit refused';
-my @out = ("", "comment budget exceeded - $verb", "");
+my @out = ("");
 
-push @out, sprintf("  earned  %d added code line%s",
-    $code_lines, $code_lines == 1 ? '' : 's');
-push @out, sprintf("  budget  %d block%s, <=%d lines each, %d comment line%s total",
-    $budget, $budget == 1 ? '' : 's', $MAX_BLOCK_LINES,
-    $allowance, $allowance == 1 ? '' : 's');
-push @out, sprintf("  spent   %d block%s, %d comment line%s",
-    scalar @blocks, @blocks == 1 ? '' : 's',
-    $comment_lines, $comment_lines == 1 ? '' : 's');
-push @out, "";
+if ($overspent) {
+    push @out, "comment budget exceeded - $verb", "";
 
-my $width = 0;
-for my $b (@blocks) {
-    my $len = length("$b->{file}:$b->{line}");
-    $width = $len if $len > $width;
+    push @out, sprintf("  earned  %d added code line%s",
+        $code_lines, $code_lines == 1 ? '' : 's');
+    push @out, sprintf("  budget  %d block%s, <=%d lines each, %d comment line%s total",
+        $budget, $budget == 1 ? '' : 's', $MAX_BLOCK_LINES,
+        $allowance, $allowance == 1 ? '' : 's');
+    push @out, sprintf("  spent   %d block%s, %d comment line%s",
+        scalar @blocks, @blocks == 1 ? '' : 's',
+        $comment_lines, $comment_lines == 1 ? '' : 's');
+    push @out, "";
+
+    my $width = 0;
+    for my $b (@blocks) {
+        my $len = length("$b->{file}:$b->{line}");
+        $width = $len if $len > $width;
+    }
+    for my $b (@blocks) {
+        my $note = $b->{trailing} ? 'trailing' : sprintf('%d line%s', $b->{size}, $b->{size} == 1 ? '' : 's');
+        $note .= ' - over block cap' if $b->{size} > $MAX_BLOCK_LINES;
+        push @out, sprintf("  %-*s  %s", $width, "$b->{file}:$b->{line}", $note);
+    }
+
+    push @out, "",
+        "Assume the right number of comments is zero. A comment earns its line only",
+        "when the behavior is rare enough that reading the code does not explain it.",
+        "Everything else is reasoning, and reasoning belongs in the commit body, where",
+        "it cannot rot away from the code it claims to describe.",
+        "",
+        "Delete what the code already says. What survives, spend the budget on.",
+        "";
 }
-for my $b (@blocks) {
-    my $note = $b->{trailing} ? 'trailing' : sprintf('%d line%s', $b->{size}, $b->{size} == 1 ? '' : 's');
-    $note .= ' - over block cap' if $b->{size} > $MAX_BLOCK_LINES;
-    push @out, sprintf("  %-*s  %s", $width, "$b->{file}:$b->{line}", $note);
-}
 
-push @out, "",
-    "Assume the right number of comments is zero. A comment earns its line only",
-    "when the behavior is rare enough that reading the code does not explain it.",
-    "Everything else is reasoning, and reasoning belongs in the commit body, where",
-    "it cannot rot away from the code it claims to describe.",
-    "",
-    "Delete what the code already says. What survives, spend the budget on.",
-    "";
+if (@dashed) {
+    push @out, "em dash in comment - $verb", "";
+    push @out, map { "  $_->{file}:$_->{line}" } @dashed;
+    push @out, "",
+        "Rewrite it with a comma, a colon, parentheses, or a new sentence.",
+        "";
+}
 
 if ($MODE eq 'worktree') {
     print STDERR join("\n", @out);

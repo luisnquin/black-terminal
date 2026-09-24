@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# commit-msg hook: strip agent trailers and normalize git revert subjects.
+# commit-msg hook: strip agent trailers, normalize git revert subjects, refuse em dashes.
 set -euo pipefail
 
 msg_file="$1"
@@ -21,3 +21,14 @@ perl -i -0pe '
 
   s/\n{3,}\z/\n\n/;
 ' "$msg_file"
+
+dashed=$(perl -ne 'last if /^# -+ >8 -+$/; next if /^#/; print "  $.: $_" if /\xE2\x80\x94/' "$msg_file")
+
+[ -z "$dashed" ] && exit 0
+
+{
+    printf '\nem dash in commit message - commit refused\n\n%s\n\n' "$dashed"
+    printf 'Rewrite it with a comma, a colon, parentheses, or a new sentence.\n'
+} >&2
+
+exit 1

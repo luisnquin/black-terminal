@@ -25,6 +25,7 @@
   branch.sort = "object";
   color.ui = "auto";
   rebase.autoStash = true;
+  merge.ff = "only";
   pull.rebase = true;
   fetch.prune = true;
 }

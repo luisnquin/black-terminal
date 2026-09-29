@@ -8,12 +8,14 @@ my $GIT = $ENV{COMMENT_BUDGET_GIT} || 'git';
 
 exit 0 if lc($ENV{COMMENT_BUDGET} || '') =~ /^(off|0|no|skip)$/;
 
-my $MAX_BLOCK_LINES = cfg('MAX_BLOCK_LINES', 2);
-my $MAX_BLOCKS      = cfg('MAX_BLOCKS',      2);
-my $MIN_BLOCKS      = cfg('MIN_BLOCKS',      1);
-my $CODE_PER_BLOCK  = cfg('CODE_PER_BLOCK',  400);
-my $MAX_DENSITY     = cfg('MAX_DENSITY_PCT', 3);
-my $FREE_LINES      = cfg('FREE_LINES',      2);
+my %PROFILE = (
+    default => profile('',
+        MAX_BLOCK_LINES => 2, MAX_BLOCKS => 2, MIN_BLOCKS => 1,
+        CODE_PER_BLOCK => 400, MAX_DENSITY_PCT => 3, FREE_LINES => 2),
+    migration => profile('MIGRATION_',
+        MAX_BLOCK_LINES => 4, MAX_BLOCKS => 6, MIN_BLOCKS => 2,
+        CODE_PER_BLOCK => 50, MAX_DENSITY_PCT => 10, FREE_LINES => 6),
+);
 
 my $EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
@@ -22,6 +24,11 @@ sub cfg {
     my $raw = $ENV{"COMMENT_BUDGET_$key"};
     return $default unless defined $raw && $raw =~ /^\d+$/;
     return $raw + 0;
+}
+
+sub profile {
+    my ($prefix, %limits) = @_;
+    return {map { $_ => cfg("$prefix$_", $limits{$_}) } keys %limits};
 }
 
 sub git {
@@ -129,6 +136,9 @@ my %LANG = (
     xml  => {block => [['<!--', '-->']]},
 );
 
+# Applied migrations are never edited, so their comments cannot drift from the schema.
+my $MIGRATION = {line => ['--'], profile => 'migration'};
+
 my %BY_NAME = (
     map { $_ => $HASH } qw(Makefile makefile GNUmakefile Dockerfile Containerfile
                            justfile Justfile .envrc .gitignore .gitattributes
@@ -158,6 +168,7 @@ sub lang_for {
 
     my ($ext) = $base =~ /\.([A-Za-z0-9_]+)$/;
     return undef unless defined $ext;
+    return $MIGRATION if lc $ext eq 'sql' && $path =~ m{(?:^|/)migrat(?:e|ions)/};
     return $LANG{lc $ext};
 }
 
@@ -338,7 +349,8 @@ for (my $k = 0; $k <= $#lines; $k++) {
     if ($raw =~ /^\+/) {
         push @files, $file unless $seen{$file}++;
         push @{$added_of{$file}},
-            {file => $file, line => $lineno++, hunk => $hunk, text => substr($raw, 1)};
+            {file => $file, line => $lineno++, hunk => $hunk, text => substr($raw, 1),
+             profile => $lang->{profile} // 'default'};
     } elsif ($raw =~ /^-/) {
         push @files, $file unless $seen{$file}++;
         push @{$removed_of{$file}},
@@ -390,19 +402,19 @@ for my $path (@files) {
     }
 }
 
-my ($code_lines, $comment_lines) = (0, 0);
-my @blocks;
+my %tally;
 my $run;
 
 for my $entry (@added) {
     my $kind = $entry->{kind};
-    $code_lines++ if $kind eq 'code' || $kind eq 'code+comment';
+    my $t = $tally{$entry->{profile}} ||= {code => 0, comment => 0, blocks => []};
+    $t->{code}++ if $kind eq 'code' || $kind eq 'code+comment';
 
     if (($kind eq 'comment' || $kind eq 'code+comment') && $reworded{$entry->{hunk}}) {
         $reworded{$entry->{hunk}}--;
         $kind = $kind eq 'comment' ? 'rewrite' : 'code';
     }
-    $comment_lines++ if $kind eq 'comment' || $kind eq 'code+comment';
+    $t->{comment}++ if $kind eq 'comment' || $kind eq 'code+comment';
 
     if ($kind eq 'rewrite') {
         $run->{last} = $entry->{line}
@@ -417,63 +429,77 @@ for my $entry (@added) {
             next;
         }
         $run = {file => $entry->{file}, line => $entry->{line}, last => $entry->{line}, size => 1, trailing => 0};
-        push @blocks, $run;
+        push @{$t->{blocks}}, $run;
         next;
     }
 
     $run = undef;
-    push @blocks, {file => $entry->{file}, line => $entry->{line}, size => 1, trailing => 1}
+    push @{$t->{blocks}}, {file => $entry->{file}, line => $entry->{line}, size => 1, trailing => 1}
         if $kind eq 'code+comment';
 }
 
 my @dashed = grep { defined $_->{tail} && $_->{tail} =~ /\xE2\x80\x94/ } @added;
 
-exit 0 unless @blocks || @dashed;
+my @overspent;
 
-my $budget = int($code_lines / $CODE_PER_BLOCK);
-$budget = $MIN_BLOCKS if $budget < $MIN_BLOCKS;
-$budget = $MAX_BLOCKS if $budget > $MAX_BLOCKS;
+for my $name (sort keys %tally) {
+    my ($t, $p) = ($tally{$name}, $PROFILE{$name});
+    my @blocks = @{$t->{blocks}};
+    next unless @blocks;
 
-my $allowance = int($code_lines * $MAX_DENSITY / 100);
-$allowance = $FREE_LINES if $allowance < $FREE_LINES;
+    my $budget = int($t->{code} / $p->{CODE_PER_BLOCK});
+    $budget = $p->{MIN_BLOCKS} if $budget < $p->{MIN_BLOCKS};
+    $budget = $p->{MAX_BLOCKS} if $budget > $p->{MAX_BLOCKS};
 
-my @oversized = grep { $_->{size} > $MAX_BLOCK_LINES } @blocks;
-my $over_budget  = @blocks > $budget;
-my $over_density = $comment_lines > $allowance;
-my $overspent    = @oversized || $over_budget || $over_density;
+    my $allowance = int($t->{code} * $p->{MAX_DENSITY_PCT} / 100);
+    $allowance = $p->{FREE_LINES} if $allowance < $p->{FREE_LINES};
 
-exit 0 unless $overspent || @dashed;
+    next unless @blocks > $budget
+             || $t->{comment} > $allowance
+             || grep { $_->{size} > $p->{MAX_BLOCK_LINES} } @blocks;
+
+    push @overspent, {%$t, name => $name, budget => $budget, allowance => $allowance,
+                      max_block_lines => $p->{MAX_BLOCK_LINES}};
+}
+
+exit 0 unless @overspent || @dashed;
 
 my $verb = $MODE eq 'post-commit' ? 'commit undone'
          : $MODE eq 'worktree'    ? 'fix before continuing'
          :                          'commit refused';
 my @out = ("");
 
-if ($overspent) {
+if (@overspent) {
     push @out, "comment budget exceeded - $verb", "";
 
-    push @out, sprintf("  earned  %d added code line%s",
-        $code_lines, $code_lines == 1 ? '' : 's');
-    push @out, sprintf("  budget  %d block%s, <=%d lines each, %d comment line%s total",
-        $budget, $budget == 1 ? '' : 's', $MAX_BLOCK_LINES,
-        $allowance, $allowance == 1 ? '' : 's');
-    push @out, sprintf("  spent   %d block%s, %d comment line%s",
-        scalar @blocks, @blocks == 1 ? '' : 's',
-        $comment_lines, $comment_lines == 1 ? '' : 's');
-    push @out, "";
+    for my $o (@overspent) {
+        my @blocks = @{$o->{blocks}};
+        push @out, "  $o->{name} files", "" if $o->{name} ne 'default';
 
-    my $width = 0;
-    for my $b (@blocks) {
-        my $len = length("$b->{file}:$b->{line}");
-        $width = $len if $len > $width;
-    }
-    for my $b (@blocks) {
-        my $note = $b->{trailing} ? 'trailing' : sprintf('%d line%s', $b->{size}, $b->{size} == 1 ? '' : 's');
-        $note .= ' - over block cap' if $b->{size} > $MAX_BLOCK_LINES;
-        push @out, sprintf("  %-*s  %s", $width, "$b->{file}:$b->{line}", $note);
+        push @out, sprintf("  earned  %d added code line%s",
+            $o->{code}, $o->{code} == 1 ? '' : 's');
+        push @out, sprintf("  budget  %d block%s, <=%d lines each, %d comment line%s total",
+            $o->{budget}, $o->{budget} == 1 ? '' : 's', $o->{max_block_lines},
+            $o->{allowance}, $o->{allowance} == 1 ? '' : 's');
+        push @out, sprintf("  spent   %d block%s, %d comment line%s",
+            scalar @blocks, @blocks == 1 ? '' : 's',
+            $o->{comment}, $o->{comment} == 1 ? '' : 's');
+        push @out, "";
+
+        my $width = 0;
+        for my $b (@blocks) {
+            my $len = length("$b->{file}:$b->{line}");
+            $width = $len if $len > $width;
+        }
+        for my $b (@blocks) {
+            my $note = $b->{trailing} ? 'trailing' : sprintf('%d line%s', $b->{size}, $b->{size} == 1 ? '' : 's');
+            $note .= ' - over block cap' if $b->{size} > $o->{max_block_lines};
+            push @out, sprintf("  %-*s  %s", $width, "$b->{file}:$b->{line}", $note);
+        }
+        push @out, "";
     }
 
-    push @out, "",
+    push @out,
         "Assume the right number of comments is zero. A comment earns its line only",
         "when the behavior is rare enough that reading the code does not explain it.",
         "Everything else is reasoning, and reasoning belongs in the commit body, where",
@@ -481,6 +507,14 @@ if ($overspent) {
         "",
         "Delete what the code already says. What survives, spend the budget on.",
         "";
+
+    push @out,
+        "On Postgres, a note about what a table, column or index means belongs in",
+        "COMMENT ON, not in a -- line. It lands in the catalog, where \\d+ and every",
+        "schema tool show it, and it costs no budget. Keep -- for the migration itself:",
+        "why this backfill, why this lock order, why this runs in two steps.",
+        ""
+        if grep { $_->{name} eq 'migration' } @overspent;
 }
 
 if (@dashed) {

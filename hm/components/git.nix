@@ -31,6 +31,17 @@
       exec ${pkgs.perl}/bin/perl ${commentBudgetScript} ${mode}
     '';
 
+  codeGuardrailScript =
+    pkgs.writeText "git-code-guardrail.pl"
+    (builtins.readFile ../../shared/git/code-guardrail.pl);
+
+  mkCodeGuardrailHook = mode:
+    pkgs.writeShellScript "git-code-guardrail-${mode}" ''
+      export CODE_GUARDRAIL_GIT=${config.programs.git.package}/bin/git
+
+      exec ${pkgs.perl}/bin/perl ${codeGuardrailScript} ${mode}
+    '';
+
   deadnixHook = pkgs.writeShellScript "git-deadnix-hook" ''
     export DEADNIX_HOOK_GIT=${config.programs.git.package}/bin/git
     export DEADNIX_HOOK_DEADNIX=${lib.getExe pkgs.deadnix}
@@ -57,12 +68,17 @@
 
     ${bannedLanguagesHook}
     ${deadnixHook}
+    ${mkCodeGuardrailHook "pre-commit"}
     ${mkCommentBudgetHook "pre-commit"}
 
     exec ${chainRepoHook} pre-commit "$@"
   '';
 
   postCommitHook = pkgs.writeShellScript "git-post-commit" ''
+    POST_COMMIT_HEAD=$(${config.programs.git.package}/bin/git rev-parse HEAD)
+    export POST_COMMIT_HEAD
+
+    ${mkCodeGuardrailHook "post-commit"}
     ${mkCommentBudgetHook "post-commit"}
 
     exec ${chainRepoHook} post-commit "$@"

@@ -83,6 +83,7 @@ if ($MODE eq 'post-commit') {
     exit 0 unless @parents;
     $head = shift @parents;
     exit 0 if @parents > 1;
+    exit 0 if $ENV{POST_COMMIT_HEAD} && $head ne $ENV{POST_COMMIT_HEAD};
 
     my $base = @parents ? $parents[0] : $EMPTY_TREE;
     ($NEW_REV, $OLD_REV) = ('HEAD', $base);
@@ -120,7 +121,8 @@ my %LANG = (
                             tf tfvars hcl cfg conf ini service desktop mk just env r jl)),
     (map { $_ => $PY } qw(py pyi)),
     nix => $NIX,
-    (map { $_ => $C_LIKE } qw(go rs c h cc cpp cxx hpp hh m mm java kt kts swift scala
+    rs  => {%$C_LIKE, justify => qr{^//\s*SAFETY:|^///\s*#\s*Safety\b}},
+    (map { $_ => $C_LIKE } qw(go c h cc cpp cxx hpp hh m mm java kt kts swift scala
                               dart php cs zig proto gradle groovy jsonnet)),
     (map { $_ => $C_LIKE } qw(js jsx mjs cjs ts tsx mts cts)),
     (map { $_ => {block => [['/*', '*/']]} } qw(css scss less)),
@@ -201,7 +203,7 @@ sub string_end {
     return -1;
 }
 
-sub classify {
+sub scan_line {
     my ($text, $lang, $state) = @_;
     $state->{tail} = undef;
 
@@ -303,6 +305,21 @@ sub classify {
     return 'exempt' if exempt($payload);
     $state->{tail} = $payload;
     return $before =~ /\S/ ? 'code+comment' : 'comment';
+}
+
+sub classify {
+    my ($text, $lang, $state) = @_;
+    my $kind = scan_line($text, $lang, $state);
+    my $justify = $lang->{justify} or return $kind;
+
+    my $tail = $state->{tail} // '';
+    my $opens = $tail =~ $justify;
+    return 'code' if $kind eq 'code+comment' && $opens;
+
+    my $heading = $tail =~ m{^///\s*#\s};
+    $state->{justifying} = $kind eq 'comment'
+        && ($opens || ($state->{justifying} && !$heading));
+    return $state->{justifying} ? 'exempt' : $kind;
 }
 
 if ($MODE eq 'worktree') {

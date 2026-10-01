@@ -122,9 +122,10 @@ my %LANG = (
     (map { $_ => $PY } qw(py pyi)),
     nix => $NIX,
     rs  => {%$C_LIKE, justify => qr{^//\s*SAFETY:|^///\s*#\s*Safety\b}},
-    (map { $_ => $C_LIKE } qw(go c h cc cpp cxx hpp hh m mm java kt kts swift scala
-                              dart php cs zig proto gradle groovy jsonnet)),
-    (map { $_ => $C_LIKE } qw(js jsx mjs cjs ts tsx mts cts)),
+    (map { $_ => $C_LIKE } qw(go c h cc cpp cxx hpp hh m mm java scala
+                              php cs zig proto gradle groovy jsonnet)),
+    (map { $_ => {%$C_LIKE, justify => qr{^(?://|/\*)\s*ignored:}} }
+        qw(js jsx mjs cjs ts tsx mts cts dart swift kt kts)),
     (map { $_ => {block => [['/*', '*/']]} } qw(css scss less)),
     lua  => {line => ['--'], block => [['--[[', ']]']]},
     sql  => $DASH,

@@ -1,0 +1,8 @@
+[package]
+name = "tmux-daemons"
+version = "0.1.0"
+edition = "2021"
+description = "gpg-agent, ssh-agent and lsyncd dots and menus for the tmux status bar"
+license = "MIT"
+
+[dependencies]

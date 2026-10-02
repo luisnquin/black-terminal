@@ -1,8 +1,4 @@
-{
-  pkgs,
-  lsyncdHideBlock ? "",
-  ...
-}: {
+{pkgs, ...}: {
   paneBreathStatus = pkgs.writeShellApplication {
     name = "tmux-pane-breath-status";
     runtimeInputs = with pkgs; [
@@ -14,11 +10,15 @@
       set -euo pipefail
 
       tty_path="''${1:-}"
-      label="''${2:-}"
-      selected="''${3:-0}"
+      selected="''${2:-}"
+
+      idle="#2f3340"
+      if [ "$selected" = "current" ]; then
+        idle="#a6e22e"
+      fi
 
       if [ -z "$tty_path" ] || [ "$tty_path" = "not a tty" ]; then
-        printf '%s' "$label"
+        printf '#[fg=%s]●' "$idle"
         exit 0
       fi
 
@@ -43,11 +43,7 @@
       )"
 
       if [ -z "$elapsed" ] || [ "$elapsed" -lt 1 ]; then
-        if [ "$selected" = "current" ]; then
-          printf '#[fg=#c0caf5,bold]%s#[default]' "$label"
-        else
-          printf '#[fg=#a9b1d6]%s#[default]' "$label"
-        fi
+        printf '#[fg=%s]●' "$idle"
         exit 0
       fi
 
@@ -69,104 +65,46 @@
         color="$color_b"
       fi
 
-      seconds_part="$(( elapsed % 60 ))"
-      total_minutes="$(( elapsed / 60 ))"
-      hours="$(( elapsed / 3600 ))"
-      minutes_in_hour="$(( total_minutes % 60 ))"
-
-      if [ "$elapsed" -lt 60 ]; then
-        runtime="''${seconds_part}s"
-      elif [ "$hours" -gt 0 ]; then
-        if [ "$minutes_in_hour" -eq 0 ]; then
-          runtime="''${hours}h"
-        else
-          runtime="''${hours}h''${minutes_in_hour}m"
-        fi
-      else
-        runtime="''${total_minutes}m"
-      fi
-
-      printf '#[fg=%s,bold]%s %s#[default]' "$color" "$label" "$runtime"
+      printf '#[fg=%s]●' "$color"
     '';
   };
 
-  lsyncdStatus = pkgs.writeShellApplication {
-    name = "tmux-lsyncd-status";
+  gitStatus = pkgs.writeShellApplication {
+    name = "tmux-git-status";
     runtimeInputs = with pkgs; [
-      tmux
-      gnugrep
-    ];
-    text =
-      ''
-        set -euo pipefail
-
-      ''
-      + lsyncdHideBlock
-      + ''
-        status_file="$(tmux show-option -gqv @lsyncd_status_file)"
-        status_file="''${status_file:-/tmp/lsyncd.status}"
-
-        if ! pgrep -x lsyncd >/dev/null 2>&1; then
-          printf 'LSYNCD=0'
-          exit 0
-        fi
-
-        if [ ! -f "$status_file" ]; then
-          printf 'LSYNCD=0'
-          exit 0
-        fi
-
-        content="$(cat "$status_file" 2>/dev/null || true)"
-
-        if printf '%s\n' "$content" | grep -qi 'error'; then
-          printf 'LSYNCD=E'
-        else
-          printf 'LSYNCD=1'
-        fi
-      '';
-  };
-
-  gpgAgentStatus = pkgs.writeShellApplication {
-    name = "tmux-gpg-agent-status";
-    runtimeInputs = with pkgs; [
-      gnupg
+      git
       gawk
     ];
     text = ''
       set -euo pipefail
 
-      keyinfo_out="$(
-        gpg-connect-agent 'keyinfo --list' /bye 2>/dev/null || true
-      )"
+      cd "''${1:-.}" 2>/dev/null || exit 0
+      out="$(git status --porcelain=v2 --branch 2>/dev/null)" || exit 0
 
-      if printf '%s\n' "$keyinfo_out" |
-        awk '/^S KEYINFO / && $7 == "1" { found = 1 } END { exit(found ? 0 : 1) }'; then
-        printf 'GPG=1'
-      else
-        printf 'GPG=0'
-      fi
-    '';
-  };
+      printf '%s\n' "$out" | awk '
+        /^# branch.oid / { oid = substr($3, 1, 7) }
+        /^# branch.head / { head = $3 }
+        /^# branch.ab / { ahead = $3 != "+0"; behind = $4 != "-0" }
+        /^u / { conflict = 1 }
+        /^\? / { dirty = 1 }
+        /^[12] / {
+          if (substr($2, 1, 1) != ".") staged = 1
+          if (substr($2, 2, 1) != ".") dirty = 1
+        }
+        END {
+          if (head == "(detached)") head = oid
+          if (length(head) > 20) head = substr(head, 1, 19) "…"
 
-  sshAgentStatus = pkgs.writeShellApplication {
-    name = "tmux-ssh-agent-status";
-    runtimeInputs = with pkgs; [
-      openssh
-    ];
-    text = ''
-      set -euo pipefail
+          color = "#a6e22e"
+          if (staged) color = "#7dcfff"
+          if (dirty) color = "#e0af68"
+          if (conflict) color = "#f7768e"
 
-      sock="''${SSH_AUTH_SOCK:-}"
-      if [ -z "$sock" ] || [ ! -S "$sock" ]; then
-        printf 'SSH=0'
-        exit 0
-      fi
-
-      if ssh-add -l >/dev/null 2>&1; then
-        printf 'SSH=1'
-      else
-        printf 'SSH=0'
-      fi
+          printf "#[fg=%s]%s", color, head
+          if (ahead) printf "#[fg=#7aa2f7]↑"
+          if (behind) printf "#[fg=#bb9af7]↓"
+        }
+      '
     '';
   };
 }

@@ -9,23 +9,26 @@
 
   autoStartSkipGuard = concatMapStrings (v: " && -z \"\${${v}:-}\"") cfg.autoStartSkipEnv;
 
-  lsyncdHideBlock = optionalString (cfg.status.lsyncd.enable && cfg.status.lsyncd.hideOnRemoteSsh) ''
-    if [ "''${TMUX_HIDE_LSYNCD:-0}" = 1 ]; then
-      exit 0
-    fi
+  apps = import ./apps.nix {inherit pkgs;};
+  tmuxDaemons = pkgs.callPackage ./daemons {};
 
+  builtinTheme = cfg.theme.plugin == null;
+
+  daemonNames =
+    lib.optional cfg.status.gpg.enable "gpg"
+    ++ lib.optional cfg.status.ssh.enable "ssh"
+    ++ lib.optional cfg.status.lsyncd.enable "lsyncd";
+  daemonArgs = concatStringsSep " " daemonNames;
+  daemons = optionalString (daemonNames != []) "#(tmux-daemons segment ${daemonArgs})";
+  daemonsMenu = "run -b 'tmux-daemons menu #{client_name} ${daemonArgs}'";
+  daemonsBindings = optionalString (daemonNames != []) ''
+    bind -n MouseUp1Status if -F '#{==:#{mouse_status_range},daemons}' "${daemonsMenu}"
+    bind a ${daemonsMenu}
   '';
 
-  apps = import ./apps.nix {
-    inherit pkgs;
-    inherit lsyncdHideBlock;
-  };
-
-  statusRight = concatStringsSep " " (filter (s: s != "") [
-    (optionalString cfg.status.gpg.enable "#(tmux-gpg-agent-status)")
-    (optionalString cfg.status.ssh.enable "#(tmux-ssh-agent-status)")
-    (optionalString cfg.status.lsyncd.enable "#(tmux-lsyncd-status)")
-    (optionalString cfg.status.gitmux.enable ''#(gitmux -cfg $HOME/.config/gitmux.conf "#{pane_current_path}")'')
+  statusRight = concatStringsSep "   " (filter (s: s != "") [
+    daemons
+    (optionalString cfg.status.git.enable ''#(tmux-git-status "#{pane_current_path}")'')
   ]);
 in {
   options.shared.tmux = {
@@ -74,10 +77,10 @@ in {
             };
           };
 
-          gitmux.enable = mkOption {
+          git.enable = mkOption {
             type = types.bool;
             default = true;
-            description = "Show gitmux segment.";
+            description = "Show git branch segment, colored by worktree state.";
           };
         };
       };
@@ -86,21 +89,16 @@ in {
 
     theme = {
       plugin = mkOption {
-        type = types.package;
-        default = pkgs.tmuxPlugins.tokyo-night-tmux;
-        description = "Package for the tmux theme.";
+        type = types.nullOr types.package;
+        default = null;
+        example = lib.literalExpression "pkgs.tmuxPlugins.rose-pine";
+        description = "tmux theme plugin. Null uses the built-in theme.";
       };
 
       extraConfig = mkOption {
         type = types.lines;
-        default = ''
-          set -g @tokyo-night-tmux_theme night
-          set -g @tokyo-night-tmux_transparent 0
-          set -g @theme_variation 'storm'
-          set -g @theme_left_separator ''
-          set -g @theme_right_separator ''
-        '';
-        description = "Additional theme-specific tmux configuration.";
+        default = "";
+        description = "Theme plugin options, sourced before the plugin runs.";
       };
     };
   };
@@ -111,16 +109,21 @@ in {
       extraConfig =
         builtins.readFile ./tmux.conf
         + "\n"
+        + optionalString builtinTheme (builtins.readFile ./theme.conf + "\n")
         + "set -g status-right '${statusRight}'\n"
-        + cfg.theme.extraConfig;
+        + daemonsBindings;
 
-      plugins = with pkgs.tmuxPlugins; [
-        pain-control
-        sensible
-        logging
-        copycat
-        cfg.theme.plugin
-      ];
+      plugins = with pkgs.tmuxPlugins;
+        [
+          pain-control
+          sensible
+          logging
+          copycat
+        ]
+        ++ lib.optional (!builtinTheme) {
+          plugin = cfg.theme.plugin;
+          inherit (cfg.theme) extraConfig;
+        };
     };
 
     programs.zsh.initContent = lib.mkMerge [
@@ -139,13 +142,9 @@ in {
     ];
 
     home.packages = [
-      pkgs.gitmux
-      apps.lsyncdStatus
+      tmuxDaemons
       apps.paneBreathStatus
-      apps.gpgAgentStatus
-      apps.sshAgentStatus
+      apps.gitStatus
     ];
-
-    xdg.configFile."gitmux.conf".source = ./gitmux.conf;
   };
 }

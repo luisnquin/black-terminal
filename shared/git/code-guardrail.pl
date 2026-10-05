@@ -25,6 +25,28 @@ sub git {
     return $? == 0 ? $out : undef;
 }
 
+my ($batch_in, $batch_out);
+
+sub blob {
+    my ($spec) = @_;
+    return git('show', $spec) if $spec =~ /\n/;
+    unless ($batch_in) {
+        require IPC::Open2;
+        IPC::Open2::open2($batch_out, $batch_in, $GIT, 'cat-file', '--batch');
+        binmode $_ for $batch_in, $batch_out;
+    }
+    print {$batch_in} "$spec\n";
+    $batch_in->flush;
+    my $header = <$batch_out> // return undef;
+    return undef unless $header =~ /^\S+ blob (\d+)$/;
+    my ($size, $content) = ($1, '');
+    while (length $content < $size) {
+        read($batch_out, $content, $size - length $content, length $content) or return undef;
+    }
+    <$batch_out>;
+    return $content;
+}
+
 sub lex_rust {
     my ($content) = @_;
     my ($depth, $string, @lines) = (0, undef);
@@ -114,16 +136,63 @@ sub justified {
     return 0;
 }
 
-sub rust_unsafe {
-    my ($content, $added) = @_;
-    my $lines = lex_rust($content);
-    my @found;
+sub construct_key {
+    (my $key = shift) =~ s/\s+//g;
+    $key =~ tr/'`/""/;
+    $key =~ s/;//g;
+    $key =~ s/,(?=[)\]}>])//g;
+    $key =~ s/\(([\w\$]+)\)=>/$1=>/g;
+    return $key;
+}
 
-    for my $lineno (@$added) {
-        my $line = $lines->[$lineno - 1] or next;
-        next unless $line->{code} =~ /\bunsafe\b/;
-        next if justified($lines, $lineno - 1);
-        push @found, $lineno;
+sub matching {
+    my ($text, $at, $open, $close) = @_;
+    for (my ($j, $depth) = ($at, 0); $j < length $text; $j++) {
+        my $c = substr($text, $j, 1);
+        $depth++ if $c eq $open;
+        $depth-- if $c eq $close;
+        return $j if $depth == 0;
+    }
+    return length($text) - 1;
+}
+
+sub rust_unsafe_end {
+    my ($code, $at) = @_;
+    pos($code) = $at;
+    $code =~ /\G\s*/g;
+    my $next = pos $code;
+    my $c = substr($code, $next, 1);
+    return matching($code, $next, '{', '}') if $c eq '{';
+    return matching($code, $next, '(', ')') if $c eq '(';
+    for (my ($j, $depth) = ($next, 0); $j < length $code; $j++) {
+        my $d = substr($code, $j, 1);
+        $depth += $d eq '(' ? 1 : $d eq ')' ? -1 : 0;
+        return $j if !$depth && ($d eq '{' || $d eq ';');
+    }
+    return length($code) - 1;
+}
+
+sub rust_unsafe {
+    my ($content) = @_;
+    my $lines = lex_rust($content);
+    my $code = join "\n", map { $_->{code} } @$lines;
+    my $line_of = sub { 1 + (substr($code, 0, shift) =~ tr/\n//) };
+    my (@found, %seen);
+
+    while ($code =~ /\bunsafe\b/g) {
+        my ($start, $end) = ($-[0], rust_unsafe_end($code, $+[0]));
+        my ($from, $to) = ($line_of->($start), $line_of->($end));
+        next if justified($lines, $from - 1);
+
+        if (my $prev = $seen{$from}) {
+            $prev->{to} = $to if $to > $prev->{to};
+            next;
+        }
+        push @found, $seen{$from} = {line => $from, from => $from, to => $to};
+    }
+
+    for my $v (@found) {
+        $v->{key} = construct_key(join '', map { $_->{code} } @$lines[$v->{from} - 1 .. $v->{to} - 1]);
     }
     return @found;
 }
@@ -323,13 +392,73 @@ sub catch_blocks {
     return @found;
 }
 
+sub openers {
+    my ($text) = @_;
+    my (%open_of, %stack);
+    my %pair = (')' => '(', ']' => '[', '}' => '{');
+    for my $j (0 .. length($text) - 1) {
+        my $c = substr($text, $j, 1);
+        if ($c =~ /[(\[{]/) {
+            push @{$stack{$c}}, $j;
+        } elsif (my $o = $pair{$c}) {
+            my $at = pop @{$stack{$o}};
+            $open_of{$j} = $at if defined $at;
+        }
+    }
+    return \%open_of;
+}
+
+# An empty catch reads the same everywhere, so its identity starts at the
+# try/do or at the head of the .catch() receiver chain.
+sub statement_start {
+    my ($masked, $start, $open_of) = @_;
+    my $before = sub {
+        my $k = shift;
+        $k-- while $k > 0 && substr($masked, $k - 1, 1) =~ /\s/;
+        return $k;
+    };
+
+    if (substr($masked, $start, 1) eq '.') {
+        my $k = $start;
+        while (1) {
+            my $j = $before->($k);
+            last unless $j > 0;
+            my $c = substr($masked, $j - 1, 1);
+            if ($c =~ /[)\]}]/) {
+                $k = $open_of->{$j - 1} // last;
+                next;
+            }
+            last unless $c =~ /[\w\$]/;
+            $j-- while $j > 0 && substr($masked, $j - 1, 1) =~ /[\w\$]/;
+            $k = $j;
+            my $dot = $before->($k);
+            last unless $dot > 0 && substr($masked, $dot - 1, 1) eq '.';
+            $k = $dot - 1;
+            $k-- if $k > 0 && substr($masked, $k - 1, 1) eq '?';
+        }
+        return $k;
+    }
+
+    my $k = $start;
+    while (1) {
+        my $j = $before->($k);
+        last unless $j > 0 && substr($masked, $j - 1, 1) eq '}';
+        my $open = $open_of->{$j - 1} // last;
+        my $head = substr($masked, 0, $open);
+        return $-[0] if $head =~ /\b(?:try|do)\s*$/;
+        last unless $head =~ /\b(?:catch|on)\b[^{};]*$/;
+        $k = $-[0];
+    }
+    return $start;
+}
+
 sub swallowed_error {
-    my ($content, $added, $path) = @_;
+    my ($content, $path) = @_;
     my ($ext) = $path =~ /\.(\w+)$/;
     my $syn = $SYNTAX{lc $ext} or return;
     my ($masked, $comments) = mask_source($content, $syn);
     my @masked_lines = split /\n/, $masked, -1;
-    my %fresh = map { $_ => 1 } @$added;
+    my $open_of = openers($masked);
     my $marker = qr{\bignored:\s*\S+(?:\s+\S+){2,}};
     my $line_of = sub { 1 + (substr($masked, 0, shift) =~ tr/\n//) };
     my (@found, %seen);
@@ -339,7 +468,6 @@ sub swallowed_error {
         next unless swallowing($body);
 
         my ($from, $to) = ($line_of->($start), $line_of->($end));
-        next unless grep { $fresh{$_} } $from .. $to;
         next if grep { ($comments->{$_} // '') =~ $marker } $from .. $to;
 
         my ($above, $annotated) = ($from - 1, 0);
@@ -347,10 +475,13 @@ sub swallowed_error {
             $annotated = 1, last if $comments->{$above} =~ $marker;
             $above--;
         }
+        next if $annotated || $seen{$from}++;
 
-        push @found, $from unless $annotated || $seen{$from}++;
+        my $origin = statement_start($masked, $start, $open_of);
+        push @found, {line => $from, from => $from, to => $to,
+                      key => construct_key(substr($masked, $origin, $end - $origin + 1))};
     }
-    return sort { $a <=> $b } @found;
+    return sort { $a->{line} <=> $b->{line} } @found;
 }
 
 my @POLICIES = (
@@ -402,7 +533,9 @@ for my $marker (qw(rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_
     exit 0 if -e "$git_dir/$marker";
 }
 
-my ($diff, $rev, $is_amend, $head) = ('', '', 0, '');
+my ($diff, $rev, $old_rev, $is_amend, $head) = ('', '', undef, 0, '');
+my @DIFF = ('-c', 'core.quotePath=false', 'diff', '--unified=0', '--no-color', '--no-ext-diff',
+            '--no-relative', '--src-prefix=a/', '--dst-prefix=b/', '--diff-filter=ACMRD', '-M');
 
 if ($MODE eq 'post-commit') {
     my @parents = split ' ', (git('rev-list', '--parents', '-n', '1', 'HEAD') // '');
@@ -411,72 +544,86 @@ if ($MODE eq 'post-commit') {
     exit 0 if @parents > 1;
     exit 0 if $ENV{POST_COMMIT_HEAD} && $head ne $ENV{POST_COMMIT_HEAD};
 
-    my $base = @parents ? $parents[0] : $EMPTY_TREE;
-    $rev = 'HEAD';
-    $diff = git('diff', $base, 'HEAD', '--unified=0', '--no-color', '--no-ext-diff',
-                '--diff-filter=ACMRD', '-M') // '';
+    ($rev, $old_rev) = ('HEAD', $parents[0]);
+    $diff = git(@DIFF, $old_rev // $EMPTY_TREE, 'HEAD') // '';
 
     $is_amend = 1 if (git('reflog', '-1', '--format=%gs') // '') =~ /^commit \(amend\)/;
 } else {
-    $diff = git('diff', '--cached', '--unified=0', '--no-color', '--no-ext-diff',
-                '--diff-filter=ACMRD', '-M') // '';
+    $old_rev = 'HEAD' if git('rev-parse', '--verify', '--quiet', 'HEAD');
+    $diff = git(@DIFF, '--cached') // '';
 }
 
 exit 0 unless length $diff;
 
-my (%candidates, %removed, $file, $lineno);
+sub diff_path {
+    my ($raw, $prefix) = @_;
+    $raw =~ s/\t$//;
+    if ($raw =~ /^"(.*)"$/) {
+        my %esc = (n => "\n", t => "\t", '"' => '"', '\\' => '\\', a => "\a", b => "\b", f => "\f", r => "\r", v => "\x0b");
+        ($raw = $1) =~ s{\\([0-7]{3}|.)}{length $1 == 3 ? chr oct $1 : $esc{$1} // $1}ge;
+    }
+    return undef if $raw eq '/dev/null';
+    return $raw =~ s/^\Q$prefix\E//r;
+}
+
+my $VENDORED = qr{(?:^|/)(?:vendor|third_party|target|node_modules|dist|\.direnv)/};
+my (%added, @changed);
 my @diff = split /\n/, $diff;
 
-sub trimmed {
-    (my $text = shift) =~ s/^\s+|\s+$//g;
-    return $text;
-}
-
-for my $k (0 .. $#diff) {
-    my $raw = $diff[$k];
-
-    next if $raw =~ /^--- / && $k < $#diff && $diff[$k + 1] =~ /^\+\+\+ /;
-    if ($k > 0 && $diff[$k - 1] =~ /^--- / && $raw =~ m{^\+\+\+ (?:b/)?(.+)$}) {
-        $file = $1 eq '/dev/null' ? undef : $1;
-        $file = undef if defined $file
-            && $file =~ m{(?:^|/)(?:vendor|third_party|target|node_modules|dist|\.direnv)/};
-        $lineno = undef;
+for (my $k = 0; $k <= $#diff; $k++) {
+    if ($diff[$k] =~ /^--- / && $k < $#diff && $diff[$k + 1] =~ /^\+\+\+ /) {
+        my ($old, $new) = (diff_path(substr($diff[$k], 4), 'a/'), diff_path(substr($diff[$k + 1], 4), 'b/'));
+        $old = undef if defined $old && $old =~ $VENDORED;
+        $new = undef if defined $new && $new =~ $VENDORED;
+        push @changed, {old => $old, new => $new} if defined $old || defined $new;
+        $k++;
         next;
     }
-    if ($raw =~ /^@@ -\d+(?:,\d+)? \+(\d+)/) {
-        $lineno = $1;
-        next;
+    next unless $diff[$k] =~ /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+    my ($minus, $lineno, $plus) = ($1 // 1, $2, $3 // 1);
+    my $new = @changed ? $changed[-1]{new} : undef;
+    while (($minus || $plus) && $k < $#diff) {
+        my $sign = substr($diff[++$k], 0, 1);
+        if ($sign eq '-') {
+            $minus--;
+        } elsif ($sign eq '+') {
+            push @{$added{$new}}, $lineno if defined $new;
+            ($plus, $lineno) = ($plus - 1, $lineno + 1);
+        }
     }
-    next unless defined $lineno;
-
-    if ($raw =~ /^-(.*)/) {
-        my $text = trimmed($1);
-        $removed{$text}++ if length $text;
-    } elsif (defined $file && $raw =~ /^\+(.*)/) {
-        push @{$candidates{$file}}, [$lineno++, trimmed($1)];
-    }
-}
-
-my (%added, @order);
-
-for my $path (sort keys %candidates) {
-    for my $line (@{$candidates{$path}}) {
-        my ($at, $text) = @$line;
-        next if length $text && $removed{$text} && $removed{$text}--;
-        push @{$added{$path}}, $at;
-    }
-    push @order, $path if $added{$path};
+    $k++ while $k < $#diff && $diff[$k + 1] =~ /^\\/;
 }
 
 my %skipped = map { $_ => 1 } split /[\s,]+/, $ENV{CODE_GUARDRAIL_SKIP} // '';
 my @broken;
 
 for my $policy (grep { !$skipped{$_->{name}} } @POLICIES) {
-    my @hits;
-    for my $path (grep { $_ =~ $policy->{applies} } @order) {
-        my $content = git('show', "$rev:$path") // next;
-        push @hits, map { "$path:$_" } $policy->{check}->($content, $added{$path}, $path);
+    my (%before, %after, %touched_of, %untouched_of);
+
+    for my $c (@changed) {
+        next unless defined $c->{new} && $c->{new} =~ $policy->{applies};
+        my $content = blob("$rev:$c->{new}") // next;
+        my %touched = map { $_ => 1 } @{$added{$c->{new}} || []};
+
+        for my $v ($policy->{check}->($content, $c->{new})) {
+            $after{$v->{key}}++;
+            my $bucket = (grep { $touched{$_} } $v->{from} .. $v->{to}) ? \%touched_of : \%untouched_of;
+            push @{$bucket->{$v->{key}}}, "$c->{new}:$v->{line}";
+        }
     }
+    next unless %touched_of || %untouched_of;
+
+    for my $c (@changed) {
+        next unless defined $c->{old} && defined $old_rev && $c->{old} =~ $policy->{applies};
+        my $content = blob("$old_rev:$c->{old}") // next;
+        $before{$_->{key}}++ for $policy->{check}->($content, $c->{old});
+    }
+
+    my @hits = map { $_->[0] }
+        sort { $a->[1] cmp $b->[1] || $a->[2] <=> $b->[2] }
+        map { [$_, /^(.*):(\d+)$/] }
+        map { @{$touched_of{$_} || $untouched_of{$_}} }
+        grep { $after{$_} > ($before{$_} // 0) } keys %after;
     push @broken, {%$policy, hits => \@hits} if @hits;
 }
 

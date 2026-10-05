@@ -26,10 +26,14 @@
     bind a ${daemonsMenu}
   '';
 
-  statusRight = concatStringsSep "   " (filter (s: s != "") [
+  statusSegments = concatStringsSep "  " (filter (s: s != "") [
     daemons
     (optionalString cfg.status.git.enable ''#(tmux-git-status "#{pane_current_path}")'')
   ]);
+  statusRight =
+    if builtinTheme && statusSegments != ""
+    then "${statusSegments} "
+    else statusSegments;
 in {
   options.shared.tmux = {
     enable = mkEnableOption "Shared tmux configuration";

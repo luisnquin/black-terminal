@@ -10,12 +10,6 @@
   gitOptions = import ../../shared/git/options.nix {inherit lib;};
   sharedGitShellAliases = import ../../shared/git/shell-aliases.nix;
 
-  chainRepoHook = pkgs.writeShellScript "git-chain-repo-hook" ''
-    export CHAIN_REPO_HOOK_GIT=${config.programs.git.package}/bin/git
-
-    ${builtins.readFile ../../shared/git/chain-repo-hook.sh}
-  '';
-
   commitMsgScript =
     pkgs.writeShellScript "git-commit-msg-hook"
     (builtins.readFile ../../shared/git/commit-msg-hook.sh);
@@ -55,14 +49,6 @@
     ${builtins.readFile ../../shared/git/banned-languages-hook.sh}
   '';
 
-  commitMsgHook = pkgs.writeShellScript "git-commit-msg" ''
-    set -e
-
-    ${commitMsgScript} "$@"
-
-    exec ${chainRepoHook} commit-msg "$@"
-  '';
-
   preCommitHook = pkgs.writeShellScript "git-pre-commit" ''
     set -e
 
@@ -70,8 +56,6 @@
     ${deadnixHook}
     ${mkCodeGuardrailHook "pre-commit"}
     ${mkCommentBudgetHook "pre-commit"}
-
-    exec ${chainRepoHook} pre-commit "$@"
   '';
 
   postCommitHook = pkgs.writeShellScript "git-post-commit" ''
@@ -80,8 +64,6 @@
 
     ${mkCodeGuardrailHook "post-commit"}
     ${mkCommentBudgetHook "post-commit"}
-
-    exec ${chainRepoHook} post-commit "$@"
   '';
 in
   with lib; {
@@ -111,13 +93,21 @@ in
           sharedGitConfig
           // {
             inherit (cfg) user;
+            hook = {
+              black-terminal-commit-msg = {
+                event = "commit-msg";
+                command = "${commitMsgScript}";
+              };
+              black-terminal-pre-commit = {
+                event = "pre-commit";
+                command = "${preCommitHook}";
+              };
+              black-terminal-post-commit = {
+                event = "post-commit";
+                command = "${postCommitHook}";
+              };
+            };
           };
-
-        hooks = {
-          commit-msg = commitMsgHook;
-          pre-commit = preCommitHook;
-          post-commit = postCommitHook;
-        };
       };
 
       home.shellAliases = sharedGitShellAliases;

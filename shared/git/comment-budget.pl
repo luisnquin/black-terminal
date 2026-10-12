@@ -151,7 +151,7 @@ my %BY_NAME = (
 my @EXEMPT = (
     qr{^#!},
     qr{^(?://|\#|--|;)\s*SPDX-},
-    qr{^//\s*(?:go:|nolint|lint:|\+build|\@ts-|eslint|prettier-|biome-|oxlint|deno-lint|istanbul|jscpd:|coverage:|c8\b|v8\b)},
+    qr{^//\s*(?:go:|nolint|lint:|ignore(?:_for_file)?:|\+build|\@ts-|eslint|prettier-|biome-|oxlint|deno-lint|istanbul|jscpd:|coverage:|c8\b|v8\b)},
     qr{^///\s*<reference},
     qr{^\#\s*(?:shellcheck|noqa|type:\s*ignore|pylint:|mypy:|ruff:|fmt:|nosec|pragma:|-\*-|nix-shell|hadolint|checkov:|trivy:|gitleaks:)},
     qr{^---\s*@?\w+},

@@ -484,6 +484,86 @@ sub swallowed_error {
     return sort { $a->{line} <=> $b->{line} } @found;
 }
 
+my %CLOSER = ('(' => ')', '[' => ']', '{' => '}');
+
+sub scan {
+    my ($code, $rx, $keep) = @_;
+    my $line_of = sub { 1 + (substr($code, 0, shift) =~ tr/\n//) };
+    my @found;
+
+    while ($code =~ /$rx/g) {
+        my ($start, $open) = ($-[0], $+[0] - 1);
+        my $c = substr($code, $open, 1);
+        my $end = $CLOSER{$c} ? matching($code, $open, $c, $CLOSER{$c}) : $open;
+        next if $keep && !$keep->($start, $end);
+        push @found, {line => $line_of->($start), from => $line_of->($start), to => $line_of->($end),
+                      key => construct_key(substr($code, $start, $end - $start + 1))};
+    }
+    return @found;
+}
+
+sub source {
+    my ($content, $path) = @_;
+    my ($ext) = map { lc } $path =~ /\.(\w+)$/;
+    if ($ext eq 'rs') {
+        my $lines = lex_rust($content);
+        return ($ext, join("\n", map { $_->{code} } @$lines), {});
+    }
+    my $syn = $SYNTAX{$ext} or return;
+    return ($ext, mask_source($content, $syn));
+}
+
+sub comment_hits {
+    my ($comments, $flag) = @_;
+    return map { {line => $_, from => $_, to => $_, key => construct_key($comments->{$_})} }
+        grep { $flag->($comments->{$_}) } sort { $a <=> $b } keys %$comments;
+}
+
+sub lint_suppression {
+    my ($ext, $code, $comments) = source(@_) or return;
+
+    if ($ext eq 'rs') {
+        return scan($code, qr{#!?\[(?=\s*(?:allow|expect)\s*\()}, sub {
+            substr($code, $_[0], $_[1] - $_[0] + 1) !~ /\breason\s*=/;
+        });
+    }
+    if ($ext eq 'dart') {
+        return comment_hits($comments, sub {
+            $_[0] =~ m{(?<!/)//(?!/)\s*ignore(?:_for_file)?:(.*)} && $1 !~ /\s--\s*\S/;
+        });
+    }
+    return comment_hits($comments, sub {
+        $_[0] =~ m{(?://|/\*)\s*\@ts-(?:ignore|expect-error)\b(.*)} && ($1 =~ s{\*/.*}{}r) !~ /\w/;
+    });
+}
+
+my $NOT_IMPLEMENTED = qr{not\s+(?:yet\s+)?implemented|unimplemented|\btodo\b}i;
+
+sub placeholder {
+    my ($content) = @_;
+    my ($ext, $code) = source(@_) or return;
+    my $says_unimplemented = sub { substr($content, $_[0], $_[1] - $_[0] + 1) =~ $NOT_IMPLEMENTED };
+
+    return scan($code, qr{\b(?:todo|unimplemented)!\s*[(\[\{]})                               if $ext eq 'rs';
+    return scan($code, qr{(?<![\w.])UnimplementedError\s*\(})                                if $ext eq 'dart';
+    return scan($code, qr{(?<![\w.])(?:TODO|NotImplementedError)\s*\(})                       if $ext =~ /^kts?$/;
+    return scan($code, qr{(?<![\w.])fatalError\s*\(}, $says_unimplemented)                    if $ext eq 'swift';
+    return scan($code, qr{(?<![\w\$.])throw\s+new\s+Error\s*\(}, $says_unimplemented);
+}
+
+my $TEST_PATH = qr{(?:^|/)(?:tests?|__tests__|spec|e2e|integration_test)/|[._-](?:test|spec)s?\.\w+$};
+
+sub focused_test {
+    my ($content, $path) = @_;
+    my ($ext, $code) = source(@_) or return;
+
+    return scan($code, qr{#\[\s*ignore\s*\]}) if $ext eq 'rs';
+    return (
+        scan($code, qr{(?<![\w\$.])(?:describe|it|test|context|suite|bench)(?:\.\w+)*?\.only(?=\s*\()}),
+        $path =~ $TEST_PATH ? scan($code, qr{(?<![\w\$.])f(?:it|describe|context)(?=\s*\()}) : (),
+    );
+}
+
 my @POLICIES = (
     {
         name    => 'rust-unsafe-policy',
@@ -519,6 +599,48 @@ my @POLICIES = (
             "If it is a bug, handling or propagating the error changes what callers",
             "see at runtime. Present that change and ask the user before applying it.",
             "Do not rethrow, log, or swap the default just to get past this check.",
+        ],
+    },
+    {
+        name    => 'lint-suppression-policy',
+        applies => qr{\.(?:rs|[mc]?[jt]sx?|dart)$},
+        check   => \&lint_suppression,
+        title   => 'lint suppression without a reason',
+        advice  => [
+            "First try to fix what the lint or type checker reports. Silencing it",
+            "only to get the commit through is not a fix.",
+            "",
+            "When the suppression is intended, say why where it stands:",
+            "  Rust: #[expect(lint, reason = \"...\")], or #[allow(lint, reason = \"...\")]",
+            "  TS:   // \@ts-expect-error <reason>, preferred over \@ts-ignore",
+            "  Dart: // ignore: lint -- <reason>",
+        ],
+    },
+    {
+        name    => 'placeholder-policy',
+        applies => qr{\.(?:rs|[mc]?[jt]sx?|dart|swift|kts?)$},
+        skip    => qr{$TEST_PATH|\.(?:g|freezed|mocks)\.dart$},
+        check   => \&placeholder,
+        title   => 'unimplemented placeholder',
+        advice  => [
+            "This code panics or throws as soon as it runs. Implement it before",
+            "committing, or ask the user if the scope is unclear.",
+            "",
+            "If the path is unreachable or unsupported by design, say so with a",
+            "specific error naming why: unreachable!(\"...\") or a returned error in",
+            "Rust, UnsupportedError or StateError in Dart, error(\"...\") in Kotlin.",
+        ],
+    },
+    {
+        name    => 'focused-test-policy',
+        applies => qr{\.(?:rs|[mc]?[jt]sx?)$},
+        check   => \&focused_test,
+        title   => 'focused or silently ignored test',
+        advice  => [
+            "A focused test (.only, fit, fdescribe) quietly skips the rest of the",
+            "suite. Remove the focus before committing.",
+            "",
+            "A Rust #[ignore] needs a reason: #[ignore = \"why it cannot run here\"].",
         ],
     },
 );
@@ -602,6 +724,7 @@ for my $policy (grep { !$skipped{$_->{name}} } @POLICIES) {
 
     for my $c (@changed) {
         next unless defined $c->{new} && $c->{new} =~ $policy->{applies};
+        next if $policy->{skip} && $c->{new} =~ $policy->{skip};
         my $content = blob("$rev:$c->{new}") // next;
         my %touched = map { $_ => 1 } @{$added{$c->{new}} || []};
 
@@ -615,6 +738,7 @@ for my $policy (grep { !$skipped{$_->{name}} } @POLICIES) {
 
     for my $c (@changed) {
         next unless defined $c->{old} && defined $old_rev && $c->{old} =~ $policy->{applies};
+        next if $policy->{skip} && $c->{old} =~ $policy->{skip};
         my $content = blob("$old_rev:$c->{old}") // next;
         $before{$_->{key}}++ for $policy->{check}->($content, $c->{old});
     }

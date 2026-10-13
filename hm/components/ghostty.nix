@@ -53,7 +53,7 @@ in
               then "auto"
               else "none";
 
-            clipboard-read = "allow";
+            clipboard-read = "ask";
             clipboard-write = "allow";
 
             clipboard-trim-trailing-spaces = "true";

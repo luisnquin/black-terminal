@@ -22,10 +22,25 @@
 
   init.defaultBranch = "main";
   apply.whitespace = "fix";
-  branch.sort = "object";
+  branch.sort = "-committerdate";
   color.ui = "auto";
   rebase.autoStash = true;
   merge.ff = "only";
   pull.rebase = true;
   fetch.prune = true;
+
+  column.ui = "auto";
+  commit.verbose = true;
+  diff = {
+    algorithm = "histogram";
+    colorMoved = "zebra";
+  };
+  merge.conflictStyle = "zdiff3";
+  push.autoSetupRemote = true;
+  rebase = {
+    autoSquash = true;
+    updateRefs = true;
+  };
+  rerere.enabled = true;
+  tag.sort = "version:refname";
 }

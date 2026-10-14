@@ -34,21 +34,26 @@ in
           strategy = ["history"];
         };
 
-        initContent = ''
-          if [[ -v ANTIGRAVITY_AGENT ]]; then
-            export STARSHIP_CONFIG="$HOME/.config/starship/agent.toml"
-            unset HISTFILE
-            export NO_COLOR=1
-          fi
+        initContent = lib.mkMerge [
+          (lib.mkBefore ''
+            [[ -r /etc/zsh/global-rc.zsh ]] && source /etc/zsh/global-rc.zsh
+          '')
+          ''
+            if [[ -v ANTIGRAVITY_AGENT ]]; then
+              export STARSHIP_CONFIG="$HOME/.config/starship/agent.toml"
+              unset HISTFILE
+              export NO_COLOR=1
+            fi
 
-          # Nobody typed in a pane dazzle opened, and the rc is what assigns
-          # HISTFILE, so only the rc can take it away again.
-          if [[ -v DAZZLE_PANE ]]; then
-            unset HISTFILE
-          fi
+            # Nobody typed in a pane dazzle opened, and the rc is what assigns
+            # HISTFILE, so only the rc can take it away again.
+            if [[ -v DAZZLE_PANE ]]; then
+              unset HISTFILE
+            fi
 
-          ${builtins.readFile ../../../shared/zsh/.zshrc}
-        '';
+            ${builtins.readFile ../../../shared/zsh/.zshrc}
+          ''
+        ];
 
         history = {
           expireDuplicatesFirst = true;

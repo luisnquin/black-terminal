@@ -160,8 +160,20 @@ my @EXEMPT = (
     qr{^<!--\s*(?:prettier-ignore|markdownlint)},
 );
 
+# COMMENT_BUDGET_EXCLUDE: repo-relative paths or globs, split on ':' or whitespace.
+my @EXCLUDE = map { glob_rx($_) } grep { length } split /[:\s]+/, ($ENV{COMMENT_BUDGET_EXCLUDE} // '');
+
+sub glob_rx {
+    my ($glob) = @_;
+    my $rx = join '', map {
+        $_ eq '**' ? '.*' : $_ eq '*' ? '[^/]*' : $_ eq '?' ? '[^/]' : quotemeta
+    } split /(\*\*|\*|\?)/, $glob;
+    return qr{^$rx$};
+}
+
 sub lang_for {
     my ($path) = @_;
+    return undef if grep { $path =~ $_ } @EXCLUDE;
     return undef if $path =~ m{(?:^|/)(?:vendor|node_modules|third_party|\.direnv|dist|__generated__|__snapshots__)/};
 
     (my $base = $path) =~ s{.*/}{};

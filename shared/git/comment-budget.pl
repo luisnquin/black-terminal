@@ -10,8 +10,8 @@ exit 0 if lc($ENV{COMMENT_BUDGET} || '') =~ /^(off|0|no|skip)$/;
 
 my %PROFILE = (
     default => profile('',
-        MAX_BLOCK_LINES => 2, MAX_BLOCKS => 2, MIN_BLOCKS => 1,
-        CODE_PER_BLOCK => 400, MAX_DENSITY_PCT => 3, FREE_LINES => 2),
+        MAX_BLOCK_LINES => 2, MAX_BLOCKS => 2, MIN_BLOCKS => 2,
+        CODE_PER_BLOCK => 400, MAX_DENSITY_PCT => 3, FREE_LINES => 4),
     migration => profile('MIGRATION_',
         MAX_BLOCK_LINES => 4, MAX_BLOCKS => 6, MIN_BLOCKS => 2,
         CODE_PER_BLOCK => 50, MAX_DENSITY_PCT => 10, FREE_LINES => 6),

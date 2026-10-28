@@ -158,6 +158,9 @@ keybinding:
     executeShellCommand: ":"
     extrasMenu: "@"
     filteringMenu: <ctrl+s>
+    forwardDeleteWord:
+      - <ctrl+delete>
+      - <alt+delete>
     goInto: <enter>
     gotoBottom: ">"
     gotoTop: <

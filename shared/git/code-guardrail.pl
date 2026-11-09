@@ -452,6 +452,17 @@ sub statement_start {
     return $start;
 }
 
+my $IGNORED = qr{\bignored:\s*\S+(?:\s+\S+){2,}};
+
+sub ignored_note {
+    my ($code_lines, $comments, $from, $to) = @_;
+    return 1 if grep { ($comments->{$_} // '') =~ $IGNORED } $from .. $to;
+    for (my $above = $from - 1; $above >= 1 && $code_lines->[$above - 1] !~ /\S/ && defined $comments->{$above}; $above--) {
+        return 1 if $comments->{$above} =~ $IGNORED;
+    }
+    return 0;
+}
+
 sub swallowed_error {
     my ($content, $path) = @_;
     my ($ext) = $path =~ /\.(\w+)$/;
@@ -459,7 +470,6 @@ sub swallowed_error {
     my ($masked, $comments) = mask_source($content, $syn);
     my @masked_lines = split /\n/, $masked, -1;
     my $open_of = openers($masked);
-    my $marker = qr{\bignored:\s*\S+(?:\s+\S+){2,}};
     my $line_of = sub { 1 + (substr($masked, 0, shift) =~ tr/\n//) };
     my (@found, %seen);
 
@@ -468,14 +478,7 @@ sub swallowed_error {
         next unless swallowing($body);
 
         my ($from, $to) = ($line_of->($start), $line_of->($end));
-        next if grep { ($comments->{$_} // '') =~ $marker } $from .. $to;
-
-        my ($above, $annotated) = ($from - 1, 0);
-        while ($above >= 1 && $masked_lines[$above - 1] !~ /\S/ && defined $comments->{$above}) {
-            $annotated = 1, last if $comments->{$above} =~ $marker;
-            $above--;
-        }
-        next if $annotated || $seen{$from}++;
+        next if ignored_note(\@masked_lines, $comments, $from, $to) || $seen{$from}++;
 
         my $origin = statement_start($masked, $start, $open_of);
         push @found, {line => $from, from => $from, to => $to,
@@ -553,6 +556,7 @@ sub placeholder {
 
 my $TEST_PATH = qr{(?:^|/)(?:tests?|__tests__|spec|e2e|integration_test)/|[._-](?:test|spec)s?\.\w+$};
 
+my $GENERATED = qr{\.(?:g|freezed|mocks)\.dart$};
 sub focused_test {
     my ($content, $path) = @_;
     my ($ext, $code) = source(@_) or return;
@@ -619,7 +623,7 @@ my @POLICIES = (
     {
         name    => 'placeholder-policy',
         applies => qr{\.(?:rs|[mc]?[jt]sx?|dart|swift|kts?)$},
-        skip    => qr{$TEST_PATH|\.(?:g|freezed|mocks)\.dart$},
+        skip    => qr{$TEST_PATH|$GENERATED},
         check   => \&placeholder,
         title   => 'unimplemented placeholder',
         advice  => [

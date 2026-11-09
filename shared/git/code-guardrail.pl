@@ -510,7 +510,8 @@ sub source {
     my ($ext) = map { lc } $path =~ /\.(\w+)$/;
     if ($ext eq 'rs') {
         my $lines = lex_rust($content);
-        return ($ext, join("\n", map { $_->{code} } @$lines), {});
+        my %comments = map { ($_ + 1 => $lines->[$_]{comment}) } grep { length $lines->[$_]{comment} } 0 .. $#$lines;
+        return ($ext, join("\n", map { $_->{code} } @$lines), \%comments);
     }
     my $syn = $SYNTAX{$ext} or return;
     return ($ext, mask_source($content, $syn));
@@ -555,8 +556,8 @@ sub placeholder {
 }
 
 my $TEST_PATH = qr{(?:^|/)(?:tests?|__tests__|spec|e2e|integration_test)/|[._-](?:test|spec)s?\.\w+$};
-
 my $GENERATED = qr{\.(?:g|freezed|mocks)\.dart$};
+
 sub focused_test {
     my ($content, $path) = @_;
     my ($ext, $code) = source(@_) or return;
@@ -566,6 +567,51 @@ sub focused_test {
         scan($code, qr{(?<![\w\$.])(?:describe|it|test|context|suite|bench)(?:\.\w+)*?\.only(?=\s*\()}),
         $path =~ $TEST_PATH ? scan($code, qr{(?<![\w\$.])f(?:it|describe|context)(?=\s*\()}) : (),
     );
+}
+
+my %CATCH_ALL = (
+    rs   => qr{(?<![\w.])(?:_|Err\s*\(\s*(?:_\w*|\.\.)\s*\))\s*=>\s*(?:\{\s*\}|\(\s*\))},
+    dart => qr{(?<![\w\$.])(?:default|case\s+_)\s*:\s*(?:break\s*;\s*)?\}},
+);
+
+sub empty_catch_all {
+    my ($ext, $code, $comments) = source(@_) or return;
+    my $rx = $CATCH_ALL{$ext} // qr{(?<![\w\$.])default\s*:\s*(?:break\s*;?\s*)?\}};
+    my @lines = split /\n/, $code, -1;
+    return grep { !ignored_note(\@lines, $comments, $_->{from}, $_->{to}) } scan($code, $rx);
+}
+
+sub rust_panic {
+    my ($ext, $code) = source(@_) or return;
+    while ($code =~ /#\[\s*(?:cfg\s*\(\s*test\s*\)|(?:\w+::)*test)\s*\]/g) {
+        my ($at, $after) = ($-[0], $+[0]);
+        my $brace = index($code, '{', $after);
+        next if $brace < 0 || substr($code, $after, $brace - $after) =~ /;/;
+        my $end = matching($code, $brace, '{', '}');
+        substr($code, $at, $end - $at + 1) = blank(substr($code, $at, $end - $at + 1));
+        pos($code) = $end + 1;
+    }
+    return (
+        scan($code, qr{\.\s*unwrap\s*\(\s*\)}),
+        scan($code, qr{\b(?:unreachable|panic)!\s*(?:\(\s*\)|\[\s*\]|\{\s*\})}),
+    );
+}
+
+my $DEFERRED = qr{\b(?:for\s+now|for\s+the\s+time\s+being|work[- ]?around|quick\s+fix|band-?aid|hack(?:y|ish)?)\b}i;
+my $TRACKED = qr{https?://\S|\b[A-Z][A-Z0-9]+-\d+\b|#\d+\b};
+
+sub deferred_fix {
+    my ($content, $path) = @_;
+    my $comments;
+    if ($path =~ /\.nix$/i) {
+        my $n = 0;
+        $comments = {map { $n++; /^\s*(#.*)/ ? ($n => $1) : () } split /\n/, $content, -1};
+    } else {
+        (undef, undef, $comments) = source(@_) or return;
+    }
+    return comment_hits($comments, sub {
+        ($_[0] =~ $DEFERRED || $_[0] =~ /\b(?:TODO|FIXME|XXX|HACK)\b/) && $_[0] !~ $TRACKED;
+    });
 }
 
 my @POLICIES = (
@@ -645,6 +691,53 @@ my @POLICIES = (
             "suite. Remove the focus before committing.",
             "",
             "A Rust #[ignore] needs a reason: #[ignore = \"why it cannot run here\"].",
+        ],
+    },
+    {
+        name    => 'catch-all-policy',
+        applies => qr{\.(?:rs|[mc]?[jt]sx?|dart)$},
+        skip    => $GENERATED,
+        check   => \&empty_catch_all,
+        title   => 'catch-all branch that does nothing',
+        advice  => [
+            "A _ => {}, Err(_) => {} or empty default: hides every case nobody",
+            "handled, and the compiler or exhaustiveness lint can no longer point",
+            "at new variants.",
+            "",
+            "Prefer listing the remaining cases, or handling the error. If ignoring",
+            "them is intended, change nothing in the code. Put a // ignored: <reason>",
+            "comment inside the branch or directly above it, at least three words.",
+        ],
+    },
+    {
+        name    => 'rust-panic-policy',
+        applies => qr{\.rs$},
+        skip    => qr{$TEST_PATH|(?:^|/)(?:examples|benches)/|(?:^|/)build\.rs$},
+        check   => \&rust_panic,
+        title   => 'panic with no stated reason',
+        advice  => [
+            "A bare .unwrap(), unreachable!() or panic!() crashes with a message that",
+            "says nothing about which invariant broke. #[cfg(test)] and #[test]",
+            "items are exempt.",
+            "",
+            "Propagate with ? when the caller can handle it. When failure really is",
+            "impossible, say why: .expect(\"<invariant that holds>\") or",
+            "unreachable!(\"<why this branch cannot run>\").",
+        ],
+    },
+    {
+        name    => 'deferred-fix-policy',
+        applies => qr{\.(?:rs|[mc]?[jt]sx?|dart|swift|kts?|nix)$},
+        skip    => $GENERATED,
+        check   => \&deferred_fix,
+        title   => 'untracked "for now" or workaround comment',
+        advice  => [
+            "A TODO, FIXME, HACK, \"for now\" or workaround comment marks a known",
+            "gap that nobody tracks.",
+            "",
+            "Fix it now if it is in scope. Otherwise record it with the techdebt-mcp",
+            "server or as an issue, and put the link or key (ABC-123, #123) in the",
+            "comment. For an upstream workaround, link the upstream issue.",
         ],
     },
 );

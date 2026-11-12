@@ -558,6 +558,14 @@ if (@overspent && !$only_generated) {
         "it cannot rot away from the code it claims to describe.",
         "",
         "Delete what the code already says. What survives, spend the budget on.",
+        "",
+        "Still refused because the project's linter requires those comments? Keep",
+        "them and exempt only those files:",
+        "",
+        "  COMMENT_BUDGET_EXCLUDE='path/a.ts:path/b.ts' git commit ...",
+        "",
+        "Never exempt comments you chose to write. Never use --no-verify. If neither",
+        "fits, stop and ask the user.",
         "";
 
     push @out,

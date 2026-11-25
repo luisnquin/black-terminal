@@ -57,6 +57,10 @@ in
 
         history = {
           expireDuplicatesFirst = true;
+          extended = true;
+          ignoreAllDups = true;
+          saveNoDups = true;
+          findNoDups = true;
           ignoreSpace = true;
           size = 200000;
           save = 100000;

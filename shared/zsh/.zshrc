@@ -9,6 +9,7 @@ zstyle ':completion:*' matcher-list '' 'm:{a-zA-Z}={A-Za-z}' 'r:|=*' 'l:|=* r:|=
 
 # https://stackoverflow.com/a/11873793
 setopt interactivecomments
+setopt hist_verify hist_reduce_blanks
 
 # On deleting with <Alt> + <Backspace> stops the behavior until finding
 # a non-alphanumeric character

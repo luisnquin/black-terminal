@@ -18,6 +18,8 @@ git:
     manualCommit: false
   overrideGpg: false
   diffRenderers:
+    - type: extDiff
+      command: difft --color=always
     - colorArg: always
       useConfig: false
       type: rawGit

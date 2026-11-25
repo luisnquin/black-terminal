@@ -93,6 +93,8 @@ in
           sharedGitConfig
           // {
             inherit (cfg) user;
+            difftool.prompt = false;
+            pager.difftool = true;
             hook = {
               black-terminal-commit-msg = {
                 event = "commit-msg";
@@ -108,6 +110,14 @@ in
               };
             };
           };
+      };
+
+      programs.difftastic = {
+        enable = true;
+        git = {
+          enable = true;
+          mode = "difftool";
+        };
       };
 
       home.shellAliases = sharedGitShellAliases;

@@ -62,6 +62,7 @@ in
               if isLinux
               then "zsh"
               else "fish";
+            shell-integration-features = "ssh-env,ssh-terminfo";
             desktop-notifications = "true";
             auto-update = "off";
             auto-update-channel = "tip";

@@ -2,7 +2,6 @@
   alias = {
     undo = "reset --soft HEAD^";
     amend = "commit --amend";
-    dlm = "!${./git-delete-local-merged.sh}";
   };
 
   core = {

@@ -26,7 +26,11 @@
   rebase.autoStash = true;
   merge.ff = "only";
   pull.rebase = true;
-  fetch.prune = true;
+  fetch = {
+    prune = true;
+    pruneTags = true;
+  };
+  help.autocorrect = "prompt";
 
   column.ui = "auto";
   commit.verbose = true;
@@ -35,7 +39,10 @@
     colorMoved = "zebra";
   };
   merge.conflictStyle = "zdiff3";
-  push.autoSetupRemote = true;
+  push = {
+    autoSetupRemote = true;
+    followTags = true;
+  };
   rebase = {
     autoSquash = true;
     updateRefs = true;

@@ -225,7 +225,7 @@ promptToReturnFromSubprocess: true
 quitOnTopLevelReturn: false
 refresher:
   fetchInterval: 30
-  refreshInterval: 1
+  refreshInterval: 5
 update:
   days: 14
   method: prompt
